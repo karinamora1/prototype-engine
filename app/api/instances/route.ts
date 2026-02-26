@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { listInstances, searchInstances } from "@/lib/instance-store";
 
+/** Opt out of static prerender so searchParams can be used. */
+export const dynamic = "force-dynamic";
+
 /**
  * GET /api/instances?q=search
  * Returns list of instances (id, name, slug, createdAt) for the library.
