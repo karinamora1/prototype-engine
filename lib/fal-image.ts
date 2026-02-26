@@ -32,7 +32,13 @@ export async function generateFalImage(input: GenerateFalImageInput): Promise<st
     const result = await fal.subscribe(FAL_MODEL, {
       input: {
         prompt: input.prompt.slice(0, 1000),
-        image_size: input.image_size ?? "landscape_4_3",
+        image_size: (input.image_size ?? "landscape_4_3") as
+          | "landscape_4_3"
+          | "portrait_4_3"
+          | "square"
+          | "square_hd"
+          | "portrait_16_9"
+          | "landscape_16_9",
         num_images: input.num_images ?? 1,
       },
     });
