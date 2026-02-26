@@ -250,9 +250,10 @@ export default function InstancePage({ params }: { params: { id: string } | Prom
                   selectedForeground: "#1e40af",
                 };
                 const merged = { ...defaults, ...colors };
+                type ColorKey = keyof typeof merged;
                 const hiddenKeys = ["accentCard1", "accentCard2", "accentCard3"];
-                const mainOrder = ["primary", "accent", "selectedBackground"];
-                const moreKeys = [
+                const mainOrder: ColorKey[] = ["primary", "accent", "selectedBackground"];
+                const moreKeys: ColorKey[] = [
                   "primaryForeground",
                   "selectedForeground",
                   "selectedBorder",
