@@ -1,12 +1,15 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 
+const UNLOCK_KEY = "boi_prototype_unlocked";
+
 export default function BriefPage() {
   const router = useRouter();
+  const [unlocked, setUnlocked] = useState<boolean | null>(null);
   const [clientName, setClientName] = useState("");
   const [childrenBrands, setChildrenBrands] = useState("");
   const [uiScheme, setUiScheme] = useState("");
@@ -25,6 +28,12 @@ export default function BriefPage() {
   const [themeDragOver, setThemeDragOver] = useState(false);
   const [logoDragOver, setLogoDragOver] = useState(false);
   const [wordmarkDragOver, setWordmarkDragOver] = useState(false);
+
+  useEffect(() => {
+    const ok = typeof window !== "undefined" && sessionStorage.getItem(UNLOCK_KEY) === "1";
+    setUnlocked(ok);
+    if (ok === false) router.replace("/");
+  }, [router]);
 
   function handleThemeFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -120,32 +129,57 @@ export default function BriefPage() {
     }
   }
 
+  if (unlocked === null) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-950">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-600 border-t-cyan-400" aria-hidden />
+      </div>
+    );
+  }
+
   return (
-    <div className="mx-auto max-w-2xl px-4 py-12">
+    <div className="min-h-screen bg-slate-950">
+      {/* Background */}
+      <div
+        className="fixed inset-0 opacity-30"
+        style={{
+          background:
+            "radial-gradient(ellipse 80% 50% at 50% -10%, rgba(34, 211, 238, 0.15), transparent 50%), radial-gradient(ellipse 60% 40% at 80% 80%, rgba(139, 92, 246, 0.1), transparent 50%)",
+        }}
+      />
+      <div
+        className="fixed inset-0 opacity-[0.02]"
+        style={{
+          backgroundImage: `linear-gradient(rgba(255,255,255,.08) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.08) 1px, transparent 1px)`,
+          backgroundSize: "60px 60px",
+        }}
+      />
+
+    <div className="relative mx-auto max-w-2xl px-4 py-12">
       {/* Generate modal: loading or success */}
       {(loading || generatedId) && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm"
           role="dialog"
           aria-modal="true"
           aria-labelledby="generate-modal-title"
         >
-          <div className="w-full max-w-sm rounded-xl bg-white p-8 shadow-xl">
+          <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-slate-900 p-8 shadow-xl">
             <h2 id="generate-modal-title" className="sr-only">
               {loading ? "Generating instance" : "Instance ready"}
             </h2>
             {loading ? (
               <div className="flex flex-col items-center gap-4">
-                <Loader2 className="h-12 w-12 animate-spin text-slate-600" aria-hidden />
-                <p className="text-sm font-medium text-slate-700">Generating your instance…</p>
+                <Loader2 className="h-12 w-12 animate-spin text-cyan-400" aria-hidden />
+                <p className="text-sm font-medium text-slate-300">Generating your instance…</p>
               </div>
             ) : generatedId ? (
               <div className="flex flex-col items-center gap-4">
-                <p className="text-sm font-medium text-slate-700">Instance ready.</p>
+                <p className="text-sm font-medium text-slate-300">Instance ready.</p>
                 <button
                   type="button"
                   onClick={() => router.push(`/instance/${generatedId}`)}
-                  className="w-full rounded-lg bg-[var(--color-primary)] px-4 py-3 font-medium text-[var(--color-primary-foreground)] hover:opacity-90"
+                  className="w-full rounded-xl bg-cyan-500 px-4 py-3 font-medium text-white hover:bg-cyan-400 transition"
                 >
                   Open instance →
                 </button>
@@ -154,37 +188,37 @@ export default function BriefPage() {
           </div>
         </div>
       )}
-      <Link href="/" className="mb-6 inline-block text-sm text-slate-500 hover:text-slate-700">
+      <Link href="/dashboard" className="mb-6 inline-block text-sm text-slate-400 hover:text-white transition">
         ← Back
       </Link>
-      <h1 className="mb-2 text-2xl font-bold text-slate-800">Create Prototype Instance</h1>
-      <p className="mb-6 text-slate-600">
+      <h1 className="mb-2 text-3xl font-bold text-white">Create Prototype Instance</h1>
+      <p className="mb-8 text-slate-400">
         Answer the following questions. The system will create a new branded instance of the innovation engine prototype with relevant copy and visual theme.
       </p>
       <form onSubmit={handleGenerate} className="space-y-8">
-        <section className="space-y-4">
-          <h2 className="text-lg font-semibold text-slate-800">Content</h2>
+        <section className="space-y-4 rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur-sm">
+          <h2 className="text-lg font-semibold text-white">Content</h2>
           <div>
-            <label htmlFor="clientName" className="mb-1 block text-sm font-medium text-slate-700">
+            <label htmlFor="clientName" className="mb-1 block text-sm font-medium text-slate-300">
               Client name
             </label>
             <input
               id="clientName"
               type="text"
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-800 focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+              className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-white placeholder:text-slate-500 focus:border-cyan-500/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/30"
               placeholder="SC Johnson"
               value={clientName}
               onChange={(e) => setClientName(e.target.value)}
             />
           </div>
           <div>
-            <label htmlFor="childrenBrands" className="mb-1 block text-sm font-medium text-slate-700">
+            <label htmlFor="childrenBrands" className="mb-1 block text-sm font-medium text-slate-300">
               Children brands or Categories
             </label>
             <input
               id="childrenBrands"
               type="text"
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-800 focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+              className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-white placeholder:text-slate-500 focus:border-cyan-500/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/30"
               placeholder="e.g. Glade, Mr. Muscle, Raid"
               value={childrenBrands}
               onChange={(e) => setChildrenBrands(e.target.value)}
@@ -192,26 +226,26 @@ export default function BriefPage() {
             <p className="mt-0.5 text-xs text-slate-500">Separate each brand with a comma.</p>
           </div>
           <div>
-            <label htmlFor="brief" className="mb-1 block text-sm font-medium text-slate-700">
+            <label htmlFor="brief" className="mb-1 block text-sm font-medium text-slate-300">
               What should the innovation engine focus on?
             </label>
             <textarea
               id="brief"
               rows={8}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-800 focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+              className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-white placeholder:text-slate-500 focus:border-cyan-500/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/30"
               placeholder="Focus on innovations and potential opportunities in the aircare space"
               value={brief}
               onChange={(e) => setBrief(e.target.value)}
             />
           </div>
           <div>
-            <label htmlFor="password" className="mb-1 block text-sm font-medium text-slate-700">
+            <label htmlFor="password" className="mb-1 block text-sm font-medium text-slate-300">
               Password (optional)
             </label>
             <input
               id="password"
               type="password"
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-800 focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+              className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-white placeholder:text-slate-500 focus:border-cyan-500/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/30"
               placeholder="Protect this instance"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -219,11 +253,11 @@ export default function BriefPage() {
           </div>
         </section>
 
-        <section className="space-y-4 border-t border-slate-200 pt-8">
-          <h2 className="text-lg font-semibold text-slate-800">Visuals</h2>
+        <section className="space-y-4 border-t border-white/10 pt-8">
+          <h2 className="text-lg font-semibold text-white">Visuals</h2>
           <div className="flex flex-col gap-4 sm:flex-row sm:gap-4">
-          <div className="flex-1 min-w-0 rounded-xl border border-slate-200 bg-white p-4">
-            <label className="mb-2 block text-sm font-medium text-slate-700">Upload Wordmark (optional)</label>
+          <div className="flex-1 min-w-0 rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm">
+            <label className="mb-2 block text-sm font-medium text-slate-300">Upload Wordmark (optional)</label>
             <p className="mb-2 text-xs text-slate-500">A wordmark is the brand name in typography only (no symbol). It appears at the top of the sidebar when the navbar is expanded.</p>
             <input
               ref={wordmarkFileInputRef}
@@ -263,13 +297,13 @@ export default function BriefPage() {
               onClick={() => wordmarkFileInputRef.current?.click()}
               className={`flex w-full cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed py-10 transition ${
                 wordmarkDragOver
-                  ? "border-slate-400 bg-slate-50"
-                  : "border-slate-200 bg-slate-50/50 hover:border-slate-300 hover:bg-slate-50"
+                  ? "border-cyan-500/50 bg-white/10"
+                  : "border-white/10 bg-white/5 hover:border-white/20 hover:bg-white/10"
               }`}
             >
               {wordmarkImageDataUrl ? (
                 <div className="flex flex-col items-center gap-3">
-                  <img src={wordmarkImageDataUrl} alt="Wordmark preview" className="h-16 w-auto max-w-[200px] rounded border border-slate-200 object-contain" />
+                  <img src={wordmarkImageDataUrl} alt="Wordmark preview" className="h-16 w-auto max-w-[200px] rounded border border-white/10 object-contain" />
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
@@ -277,7 +311,7 @@ export default function BriefPage() {
                         e.stopPropagation();
                         clearWordmarkImage();
                       }}
-                      className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                      className="rounded-lg border border-white/10 bg-white/10 px-3 py-1.5 text-sm font-medium text-slate-300 hover:bg-white/20"
                     >
                       Remove wordmark
                     </button>
@@ -286,17 +320,17 @@ export default function BriefPage() {
                 </div>
               ) : (
                 <>
-                  <p className="mb-2 text-sm font-medium text-slate-600">Drag and drop file here</p>
+                  <p className="mb-2 text-sm font-medium text-slate-400">Drag and drop file here</p>
                   <p className="mb-3 text-xs text-slate-500">or</p>
-                  <span className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                  <span className="rounded-lg border border-white/10 bg-white/10 px-4 py-2 text-sm font-medium text-slate-300 hover:bg-white/20">
                     Upload file
                   </span>
                 </>
               )}
             </div>
           </div>
-          <div className="flex-1 min-w-0 rounded-xl border border-slate-200 bg-white p-4">
-            <label className="mb-2 block text-sm font-medium text-slate-700">Upload a Logomark/Icon (optional)</label>
+          <div className="flex-1 min-w-0 rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm">
+            <label className="mb-2 block text-sm font-medium text-slate-300">Upload a Logomark/Icon (optional)</label>
             <p className="mb-2 text-xs text-slate-500">A logomark or icon is the symbol only (e.g. an emblem or mark). It appears in the sidebar when the navbar is collapsed.</p>
             <input
               ref={logoFileInputRef}
@@ -336,13 +370,13 @@ export default function BriefPage() {
               onClick={() => logoFileInputRef.current?.click()}
               className={`flex w-full cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed py-10 transition ${
                 logoDragOver
-                  ? "border-slate-400 bg-slate-50"
-                  : "border-slate-200 bg-slate-50/50 hover:border-slate-300 hover:bg-slate-50"
+                  ? "border-cyan-500/50 bg-white/10"
+                  : "border-white/10 bg-white/5 hover:border-white/20 hover:bg-white/10"
               }`}
             >
               {logoImageDataUrl ? (
                 <div className="flex flex-col items-center gap-3">
-                  <img src={logoImageDataUrl} alt="Logomark preview" className="h-16 w-auto max-w-[200px] rounded border border-slate-200 object-contain" />
+                  <img src={logoImageDataUrl} alt="Logomark preview" className="h-16 w-auto max-w-[200px] rounded border border-white/10 object-contain" />
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
@@ -350,7 +384,7 @@ export default function BriefPage() {
                         e.stopPropagation();
                         clearLogoImage();
                       }}
-                      className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                      className="rounded-lg border border-white/10 bg-white/10 px-3 py-1.5 text-sm font-medium text-slate-300 hover:bg-white/20"
                     >
                       Remove logomark
                     </button>
@@ -359,9 +393,9 @@ export default function BriefPage() {
                 </div>
               ) : (
                 <>
-                  <p className="mb-2 text-sm font-medium text-slate-600">Drag and drop file here</p>
+                  <p className="mb-2 text-sm font-medium text-slate-400">Drag and drop file here</p>
                   <p className="mb-3 text-xs text-slate-500">or</p>
-                  <span className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                  <span className="rounded-lg border border-white/10 bg-white/10 px-4 py-2 text-sm font-medium text-slate-300 hover:bg-white/20">
                     Upload file
                   </span>
                 </>
@@ -369,10 +403,10 @@ export default function BriefPage() {
             </div>
           </div>
           </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-4">
-          <p className="mb-2 text-sm font-medium text-slate-700">Theme / colors</p>
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm">
+          <p className="mb-2 text-sm font-medium text-slate-300">Theme / colors</p>
           <p className="mb-3 text-xs text-slate-500">Choose one: type instructions or upload a screenshot. The system will use your choice to style the prototype.</p>
-          <div className="mb-4 flex rounded-lg border border-slate-200 bg-slate-50/50 p-1">
+          <div className="mb-4 flex rounded-xl border border-white/10 bg-white/5 p-1">
             <button
               type="button"
               onClick={() => {
@@ -380,10 +414,10 @@ export default function BriefPage() {
                 setThemeImageDataUrl(null);
                 if (themeFileInputRef.current) themeFileInputRef.current.value = "";
               }}
-              className={`flex-1 rounded-md px-3 py-2 text-sm font-medium transition ${
+              className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium transition ${
                 visualsThemeMode === "text"
-                  ? "bg-white text-slate-800 shadow-sm"
-                  : "text-slate-600 hover:text-slate-800"
+                  ? "bg-white/20 text-white shadow-sm"
+                  : "text-slate-400 hover:text-white"
               }`}
             >
               Type instructions
@@ -394,10 +428,10 @@ export default function BriefPage() {
                 setVisualsThemeMode("screenshot");
                 setUiScheme("");
               }}
-              className={`flex-1 rounded-md px-3 py-2 text-sm font-medium transition ${
+              className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium transition ${
                 visualsThemeMode === "screenshot"
-                  ? "bg-white text-slate-800 shadow-sm"
-                  : "text-slate-600 hover:text-slate-800"
+                  ? "bg-white/20 text-white shadow-sm"
+                  : "text-slate-400 hover:text-white"
               }`}
             >
               Upload screenshot
@@ -411,7 +445,7 @@ export default function BriefPage() {
               <textarea
                 id="uiScheme"
                 rows={2}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-800 focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-white placeholder:text-slate-500 focus:border-cyan-500/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/30"
                 placeholder="e.g. Blue and yellow, mainly blues"
                 value={uiScheme}
                 onChange={(e) => setUiScheme(e.target.value)}
@@ -420,7 +454,7 @@ export default function BriefPage() {
             </>
           ) : (
             <div>
-              <label className="mb-2 block text-sm font-medium text-slate-600">Upload screenshot of Client website or brand guidelines</label>
+              <label className="mb-2 block text-sm font-medium text-slate-300">Upload screenshot of Client website or brand guidelines</label>
               <input
                 ref={themeFileInputRef}
                 type="file"
@@ -459,13 +493,13 @@ export default function BriefPage() {
                 onClick={() => themeFileInputRef.current?.click()}
                 className={`flex w-full cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed py-10 transition ${
                   themeDragOver
-                    ? "border-slate-400 bg-slate-50"
-                    : "border-slate-200 bg-slate-50/50 hover:border-slate-300 hover:bg-slate-50"
+                    ? "border-cyan-500/50 bg-white/10"
+                    : "border-white/10 bg-white/5 hover:border-white/20 hover:bg-white/10"
                 }`}
               >
                 {themeImageDataUrl ? (
                   <div className="flex flex-col items-center gap-3">
-                    <img src={themeImageDataUrl} alt="Upload preview" className="h-24 w-auto max-w-full rounded-lg border border-slate-200 object-contain" />
+                    <img src={themeImageDataUrl} alt="Upload preview" className="h-24 w-auto max-w-full rounded-lg border border-white/10 object-contain" />
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
@@ -473,7 +507,7 @@ export default function BriefPage() {
                           e.stopPropagation();
                           clearThemeImage();
                         }}
-                        className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                        className="rounded-lg border border-white/10 bg-white/10 px-3 py-1.5 text-sm font-medium text-slate-300 hover:bg-white/20"
                       >
                         Remove image
                       </button>
@@ -482,9 +516,9 @@ export default function BriefPage() {
                   </div>
                 ) : (
                   <>
-                    <p className="mb-2 text-sm font-medium text-slate-600">Drag and drop file here</p>
+                    <p className="mb-2 text-sm font-medium text-slate-400">Drag and drop file here</p>
                     <p className="mb-3 text-xs text-slate-500">or</p>
-                    <span className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                    <span className="rounded-lg border border-white/10 bg-white/10 px-4 py-2 text-sm font-medium text-slate-300 hover:bg-white/20">
                       Upload file
                     </span>
                   </>
@@ -495,15 +529,16 @@ export default function BriefPage() {
           )}
         </div>
         </section>
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {error && <p className="text-sm text-red-400">{error}</p>}
         <button
           type="submit"
           disabled={loading}
-          className="w-full rounded-lg bg-[var(--color-primary)] px-4 py-3 font-medium text-[var(--color-primary-foreground)] hover:opacity-90 disabled:opacity-50"
+          className="w-full rounded-xl bg-cyan-500 px-4 py-3 font-medium text-white hover:bg-cyan-400 transition disabled:opacity-50"
         >
           {loading ? "Generating…" : "Generate"}
         </button>
       </form>
+    </div>
     </div>
   );
 }

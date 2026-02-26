@@ -2,11 +2,16 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Trash2 } from "lucide-react";
+
+const UNLOCK_KEY = "boi_prototype_unlocked";
 
 type InstanceMeta = { id: string; name: string; slug: string; createdAt: string };
 
 export default function LibraryPage() {
+  const router = useRouter();
+  const [unlocked, setUnlocked] = useState<boolean | null>(null);
   const [list, setList] = useState<InstanceMeta[]>([]);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
@@ -28,6 +33,12 @@ export default function LibraryPage() {
     loadList();
   }, [query]);
 
+  useEffect(() => {
+    const ok = typeof window !== "undefined" && sessionStorage.getItem(UNLOCK_KEY) === "1";
+    setUnlocked(ok);
+    if (ok === false) router.replace("/");
+  }, [router]);
+
   function handleDelete(e: React.MouseEvent, item: InstanceMeta) {
     e.preventDefault();
     e.stopPropagation();
@@ -45,9 +56,17 @@ export default function LibraryPage() {
       .finally(() => setDeletingId(null));
   }
 
+  if (unlocked === null) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-50">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-300 border-t-slate-600" aria-hidden />
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-4xl px-4 py-12">
-      <Link href="/" className="mb-6 inline-block text-sm text-slate-500 hover:text-slate-700">
+      <Link href="/dashboard" className="mb-6 inline-block text-sm text-slate-500 hover:text-slate-700">
         ← Back
       </Link>
       <h1 className="mb-2 text-2xl font-bold text-slate-800">Instance library</h1>
