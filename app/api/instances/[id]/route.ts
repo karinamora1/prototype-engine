@@ -105,7 +105,9 @@ export async function POST(
     if (!name) {
       return NextResponse.json({ error: "name is required" }, { status: 400 });
     }
-    const password = typeof body.password === "string" ? body.password : undefined;
+    const password = typeof body.password === "string" && body.password.trim() 
+      ? body.password.trim() 
+      : undefined;
     const published = await duplicateInstance(id, { name, password });
     if (!published) {
       return NextResponse.json({ error: "Instance not found" }, { status: 404 });

@@ -1896,10 +1896,13 @@ export function BasePrototype({ theme, brand, content, features, enableAIGenerat
 
                 {flowView === "opportunitySpaces" && inputSettingsReadOnlyStep === null && conceptsView && validationReportView && selectedConcept && (
                   <div className="max-w-4xl">
-                    <h1 className="mb-6 text-2xl font-bold tracking-tight text-slate-900">
-                      {c("validationReportTitle")}: {selectedConcept.title}
-                    </h1>
-                    <div className="mb-8 grid grid-cols-3 gap-4">
+                    <div className="mb-6">
+                      <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+                        {c("validationReportTitle")}: {selectedConcept.title}
+                      </h1>
+                      <p className="mt-2 text-sm leading-relaxed text-slate-600">{selectedConcept.overview}</p>
+                    </div>
+                    <div className="mb-8 grid grid-cols-4 gap-4">
                       <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
                         <p className="mb-1 text-xs font-semibold text-slate-600">{c("validationDesirabilityLabel")}</p>
                         <div className="flex items-center gap-2">
@@ -1931,6 +1934,16 @@ export function BasePrototype({ theme, brand, content, features, enableAIGenerat
                         </div>
                         <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-100">
                           <div className="h-full w-[72%] rounded-full bg-amber-500" />
+                        </div>
+                      </div>
+                      <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+                        <p className="mb-1 text-xs font-semibold text-slate-600">Viability</p>
+                        <div className="flex items-center gap-2">
+                          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-100 text-lg font-bold text-blue-800">78</span>
+                          <span className="text-sm font-medium text-blue-700">High</span>
+                        </div>
+                        <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                          <div className="h-full w-[78%] rounded-full bg-blue-500" />
                         </div>
                       </div>
                     </div>
@@ -2000,55 +2013,62 @@ export function BasePrototype({ theme, brand, content, features, enableAIGenerat
                         </button>
                       </div>
                       <div className="flex min-w-0 flex-1 flex-wrap items-start justify-between gap-4 px-6 py-6">
-                        <div className="min-w-0 max-w-[80%] flex-1">
+                        <div className="min-w-0 flex-1">
                           <h1 className="text-2xl font-bold tracking-tight text-white">{selectedConcept.title}</h1>
                           <p className="mt-2 text-sm leading-relaxed text-slate-200">{selectedConcept.overview}</p>
                         </div>
-                        {validatedConceptIds.has(selectedConceptId ?? "") ? (
-                          <div className="flex flex-shrink-0 items-stretch gap-2">
-                          <div className="flex aspect-square w-20 flex-col justify-end rounded-lg border border-slate-200 bg-white p-2 shadow-sm">
-                            <div className="flex items-center gap-1">
-                              <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded bg-emerald-100 text-xs font-bold text-emerald-800">83</span>
-                              <span className="truncate text-[10px] font-medium text-emerald-700">High</span>
-                            </div>
-                            <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-slate-100">
-                              <div className="h-full w-[83%] rounded-full bg-emerald-500" />
-                            </div>
-                            <p className="mt-1 truncate text-[10px] font-semibold text-slate-600">{c("validationDesirabilityLabel")}</p>
-                          </div>
-                          <div className="flex aspect-square w-20 flex-col justify-end rounded-lg border border-slate-200 bg-white p-2 shadow-sm">
-                            <div className="flex flex-col gap-0.5">
-                              <span className="truncate text-[10px] font-bold tabular-nums text-slate-900 leading-tight">$1.2B</span>
-                              <span className="truncate text-[10px] font-bold tabular-nums text-slate-900 leading-tight">$1.5B</span>
-                              <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-slate-200">
-                                <div className="h-full w-[60%] rounded-full bg-slate-400" />
-                              </div>
-                            </div>
-                            <p className="mt-1 truncate text-[10px] font-semibold text-slate-600">Opp Size</p>
-                          </div>
-                          <div className="flex aspect-square w-20 flex-col justify-end rounded-lg border border-slate-200 bg-white p-2 shadow-sm">
-                            <div className="flex items-center gap-1">
-                              <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded bg-amber-100 text-xs font-bold text-amber-800">72</span>
-                              <span className="truncate text-[10px] font-medium text-amber-700">Medium</span>
-                            </div>
-                            <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-slate-100">
-                              <div className="h-full w-[72%] rounded-full bg-amber-500" />
-                            </div>
-                            <p className="mt-1 truncate text-[10px] font-semibold text-slate-600">{c("validationFeasibilityLabel")}</p>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => setValidationReportView(true)}
-                            className="flex aspect-square w-20 flex-shrink-0 flex-col items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white p-2 shadow-sm transition-colors hover:bg-slate-50 hover:border-slate-300"
-                            aria-label="See full validation report"
-                          >
-                            <ArrowRight className="h-5 w-5 text-slate-600" />
-                            <span className="text-center text-[10px] font-semibold leading-tight text-slate-600">See full validation report</span>
-                          </button>
-                        </div>
-                      ) : null}
                       </div>
                     </div>
+
+                    {validatedConceptIds.has(selectedConceptId ?? "") && (
+                      <div className="mt-6 grid grid-cols-4 gap-4">
+                        <div className="flex flex-col justify-between rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+                          <p className="mb-2 text-xs font-semibold text-slate-600">{c("validationDesirabilityLabel")}</p>
+                          <div>
+                            <div className="flex items-center gap-2 mb-2">
+                              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-base font-bold text-emerald-800">83</span>
+                              <span className="text-sm font-medium text-emerald-700">High</span>
+                            </div>
+                            <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                              <div className="h-full w-[83%] rounded-full bg-emerald-500" />
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex flex-col justify-between rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+                          <p className="mb-2 text-xs font-semibold text-slate-600">{c("validationOpportunitySizeLabel")}</p>
+                          <div>
+                            <div className="flex flex-col gap-0.5 mb-2">
+                              <span className="text-base font-bold tabular-nums text-slate-900 leading-tight">$1.2B</span>
+                              <span className="text-base font-bold tabular-nums text-slate-900 leading-tight">$1.5B</span>
+                            </div>
+                            <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200">
+                              <div className="h-full w-[60%] rounded-full bg-slate-400" />
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex flex-col justify-between rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+                          <p className="mb-2 text-xs font-semibold text-slate-600">{c("validationFeasibilityLabel")}</p>
+                          <div>
+                            <div className="flex items-center gap-2 mb-2">
+                              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-100 text-base font-bold text-amber-800">72</span>
+                              <span className="text-sm font-medium text-amber-700">Medium</span>
+                            </div>
+                            <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                              <div className="h-full w-[72%] rounded-full bg-amber-500" />
+                            </div>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setValidationReportView(true)}
+                          className="flex flex-col items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition-colors hover:bg-slate-50 hover:border-slate-300"
+                          aria-label="See full validation report"
+                        >
+                          <ArrowRight className="h-8 w-8 text-slate-600" />
+                          <span className="text-center text-xs font-semibold leading-tight text-slate-600">See full validation report</span>
+                        </button>
+                      </div>
+                    )}
 
                     <div className="mt-8 space-y-8">
                       {/* Description + Variations — side by side, Description first */}

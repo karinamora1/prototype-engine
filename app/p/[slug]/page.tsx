@@ -25,6 +25,18 @@ export default function PublishedPage({ params }: { params: { slug: string } | P
     }
   }, [params]);
 
+  const isUnlocked = useCallback((slugParam: string): boolean => {
+    if (typeof window === "undefined") return false;
+    const key = `published_unlocked_${slugParam}`;
+    return sessionStorage.getItem(key) === "1";
+  }, []);
+
+  const markUnlocked = useCallback((slugParam: string) => {
+    if (typeof window === "undefined") return;
+    const key = `published_unlocked_${slugParam}`;
+    sessionStorage.setItem(key, "1");
+  }, []);
+
   const load = useCallback(async (slugParam: string) => {
     const res = await fetch(`/api/instances/by-slug/${encodeURIComponent(slugParam)}`);
     const data = await res.json();
@@ -34,9 +46,10 @@ export default function PublishedPage({ params }: { params: { slug: string } | P
       return;
     }
     setInstance(data as PrototypeInstanceView);
-    setNeedsAuth(!!data.passwordProtected);
+    const requiresAuth = !!data.passwordProtected && !isUnlocked(slugParam);
+    setNeedsAuth(requiresAuth);
     setLoading(false);
-  }, []);
+  }, [isUnlocked]);
 
   useEffect(() => {
     if (!slug) return;
@@ -54,6 +67,7 @@ export default function PublishedPage({ params }: { params: { slug: string } | P
     });
     const data = await res.json();
     if (data.ok) {
+      markUnlocked(slug);
       setNeedsAuth(false);
       load(slug);
     } else {

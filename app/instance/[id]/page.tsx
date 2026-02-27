@@ -264,7 +264,7 @@ export default function InstancePage({ params }: { params: { id: string } | Prom
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({
                         name: publishName.trim(),
-                        password: publishPasswordProtect ? publishPassword : undefined,
+                        password: publishPasswordProtect && publishPassword.trim() ? publishPassword.trim() : undefined,
                       }),
                     });
                     const data = await res.json();

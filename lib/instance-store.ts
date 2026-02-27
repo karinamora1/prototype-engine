@@ -84,6 +84,7 @@ export async function createInstance(input: CreateInstanceInput): Promise<Protot
   const id = nanoid(10);
   const slug = input.slug ?? slugify(input.name);
   const now = new Date().toISOString();
+  const trimmedPassword = input.password?.trim();
   const instance: PrototypeInstance = {
     id,
     name: input.name,
@@ -94,7 +95,7 @@ export async function createInstance(input: CreateInstanceInput): Promise<Protot
     brand: input.brand,
     content: input.content,
     features: input.features,
-    passwordHash: input.password ? simpleHash(input.password) : null,
+    passwordHash: trimmedPassword ? simpleHash(trimmedPassword) : null,
     briefSummary: input.briefSummary,
     firstRecentProjectDetail: input.firstRecentProjectDetail ?? undefined,
     sourceInstanceId: input.sourceInstanceId,
@@ -200,7 +201,8 @@ export async function updateIndexEntry(
 
 export function verifyPassword(instance: PrototypeInstance, password: string): boolean {
   if (!instance.passwordHash) return true;
-  return instance.passwordHash === simpleHash(password);
+  const trimmedPassword = password?.trim() ?? "";
+  return instance.passwordHash === simpleHash(trimmedPassword);
 }
 
 /**
