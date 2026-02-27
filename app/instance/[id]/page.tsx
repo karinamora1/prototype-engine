@@ -158,7 +158,7 @@ export default function InstancePage({ params }: { params: { id: string } | Prom
               }}
               className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-center text-sm font-medium text-slate-700 hover:bg-slate-50"
             >
-              Edit mode
+              Refine Copy
             </button>
             )}
             <button
@@ -444,12 +444,11 @@ export default function InstancePage({ params }: { params: { id: string } | Prom
                 const merged = { ...defaults, ...colors };
                 type ColorKey = keyof typeof merged;
                 const hiddenKeys = ["accentCard1", "accentCard2", "accentCard3"];
-                const mainOrder: ColorKey[] = ["primary", "accent", "selectedBackground"];
+                const mainOrder: ColorKey[] = ["primary", "accent", "accentForeground", "selectedBackground"];
                 const moreKeys: ColorKey[] = [
                   "primaryForeground",
                   "selectedForeground",
                   "selectedBorder",
-                  "accentForeground",
                   "background",
                   "foreground",
                   "muted",

@@ -49,6 +49,33 @@ export interface FirstRecentProjectDetail {
     snippet: string;
     concepts: { id: string; title: string; overview: string; image: string }[];
   }[];
+  /** Enriched data for innovation flow (opportunities + concepts with full details) */
+  enrichedForInnovationFlow?: {
+    opportunities: Array<{
+      id: string;
+      title: string;
+      snippet: string;
+      score: number;
+      image: string;
+      benefits: string[];
+      consumerGoals: string[];
+      painPoints: string[];
+      concepts: Array<{
+        id: string;
+        opportunityId: string;
+        title: string;
+        image: string;
+        shortSummary: string;
+        overview: string;
+        variations: string[];
+        painPointsSolved: string[];
+        consumerGoal: string;
+        painPoints: string[];
+        opportunityScore: number;
+        pricePackSizeOptions: string[];
+      }>;
+    }>;
+  };
 }
 
 /** Optional features that can be toggled on/off per instance */

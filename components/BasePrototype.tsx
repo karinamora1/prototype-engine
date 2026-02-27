@@ -24,6 +24,49 @@ export interface BasePrototypeProps {
   onFlowViewChange?: (flowView: string) => void;
 }
 
+// Static project detail used only when enableAIGeneratedContent is false (default prototype).
+// Gives a representative layout for Project Alpha without calling any AI.
+const STATIC_PROJECT_DETAIL_OPPORTUNITIES = [
+  {
+    id: "static-opp-1",
+    title: "Concept route A · Signature hero concept",
+    snippet: "A flagship concept that embodies the core opportunity space and demonstrates the full experience.",
+    concepts: [
+      {
+        id: "static-concept-1",
+        title: "Concept card A1",
+        overview: "High-level description of the first hero concept card with visual, benefit, and RTB hooks.",
+        image: "https://images.unsplash.com/photo-1526481280695-3c687fd543c0?w=800&h=400&fit=crop",
+      },
+      {
+        id: "static-concept-2",
+        title: "Concept card A2",
+        overview: "Second concept variant used to show how the experience flexes across need-states.",
+        image: "https://images.unsplash.com/photo-1526481280695-3c687fd543c0?w=800&h=400&fit=crop",
+      },
+    ],
+  },
+  {
+    id: "static-opp-2",
+    title: "Concept route B · Alternative territory",
+    snippet: "A contrasting route that explores a different positioning and creative angle.",
+    concepts: [
+      {
+        id: "static-concept-3",
+        title: "Concept card B1",
+        overview: "Alternate concept card emphasizing a different emotional and functional benefit stack.",
+        image: "https://images.unsplash.com/photo-1526481280695-3c687fd543c0?w=800&h=400&fit=crop",
+      },
+      {
+        id: "static-concept-4",
+        title: "Concept card B2",
+        overview: "Supporting concept card used to round out the route with an additional execution.",
+        image: "https://images.unsplash.com/photo-1526481280695-3c687fd543c0?w=800&h=400&fit=crop",
+      },
+    ],
+  },
+];
+
 /** Parse comma-separated brand options from content; excludes "Global" and the client/project name (brand.name). */
 function parseBrandOptions(content: ContentMap, brandName: string): string[] {
   const raw = content.brandOptions ?? content.selectorLabel ?? "";
@@ -272,10 +315,26 @@ export function BasePrototype({ theme, brand, content, features, enableAIGenerat
   const [conceptsView, setConceptsView] = useState(false);
   const [selectedConceptId, setSelectedConceptId] = useState<string | null>(null);
   const [expandedMarketId, setExpandedMarketId] = useState<string | null>(null);
+  const [expandAllOpportunities, setExpandAllOpportunities] = useState(false);
   const [opportunityScorePopoverOpen, setOpportunityScorePopoverOpen] = useState(false);
   const [validationReportView, setValidationReportView] = useState(false);
   const [validationRegionCollapsed, setValidationRegionCollapsed] = useState<Record<string, boolean>>({});
   const [validatedConceptIds, setValidatedConceptIds] = useState<Set<string>>(new Set());
+  const [validatingConcept, setValidatingConcept] = useState(false);
+  const [validationResults, setValidationResults] = useState<Record<string, {
+    countryId: string;
+    countryName: string;
+    overallScore: number;
+    desirabilityScore: number;
+    subcriteria: {
+      solutionProblemFit: number;
+      consumerJourneyFit: number;
+      differentiation: number;
+      futureFit: number;
+    };
+    whatResonates: string;
+    barriers: string;
+  }[]>>({});
   const [comparisonView, setComparisonView] = useState(false);
   const [comparisonCountry, setComparisonCountry] = useState("usa");
   type ConceptItem = {
@@ -391,6 +450,7 @@ export function BasePrototype({ theme, brand, content, features, enableAIGenerat
   const [projectDetailCache, setProjectDetailCache] = useState<Record<string, { opportunities: { id: string; title: string; snippet: string; concepts: { id: string; title: string; overview: string; image: string }[] }[] }>>({});
   const [projectDetailLoading, setProjectDetailLoading] = useState(false);
   const [projectDetailError, setProjectDetailError] = useState<string | null>(null);
+  const [enrichingProject, setEnrichingProject] = useState(false);
   // Markets are fixed across the prototype (always selected)
   const [selectedMarkets, setSelectedMarkets] = useState<Set<string>>(new Set(["USA", "JPN", "DEU"]));
   const [dataSourceToggles, setDataSourceToggles] = useState<Record<string, boolean>>({
@@ -403,6 +463,132 @@ export function BasePrototype({ theme, brand, content, features, enableAIGenerat
   const dropdownRef = useRef<HTMLDivElement>(null);
   const locationDropdownRef = useRef<HTMLDivElement>(null);
   const opportunitySpacesLivePreRef = useRef<HTMLPreElement>(null);
+
+  async function validateConcept(concept: ConceptItem) {
+    if (!concept) return;
+    
+    setValidatingConcept(true);
+    try {
+      const opportunityTitle = opportunitySpacesList.find((o) => o.id === concept.opportunityId)?.title ?? "Opportunity";
+      
+      const response = await fetch("/api/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          conceptTitle: concept.title,
+          conceptOverview: concept.overview,
+          opportunityTitle,
+          countries: ["United States", "Brazil", "Mexico"],
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Validation request failed");
+      }
+
+      const data = await response.json();
+      if (data.validations && Array.isArray(data.validations)) {
+        setValidationResults((prev) => ({
+          ...prev,
+          [concept.id]: data.validations,
+        }));
+        setValidatedConceptIds((prev) => new Set(prev).add(concept.id));
+        setValidationReportView(true);
+      }
+    } catch (error) {
+      console.error("Validation error:", error);
+      // Optionally show error to user
+    } finally {
+      setValidatingConcept(false);
+    }
+  }
+
+  async function openInInnovationFlow(opportunities: { id: string; title: string; snippet: string; concepts: { id: string; title: string; overview: string; image: string }[] }[]) {
+    const preEnrichedData = firstRecentProjectDetail?.enrichedForInnovationFlow;
+    
+    if (preEnrichedData && preEnrichedData.opportunities) {
+      // Use pre-enriched data - no API call needed!
+      const enrichedOpportunities = preEnrichedData.opportunities.map((opp) => ({
+        id: opp.id,
+        title: opp.title,
+        snippet: opp.snippet,
+        score: opp.score,
+        image: opp.image,
+        benefits: opp.benefits,
+        consumerGoals: opp.consumerGoals,
+        painPoints: opp.painPoints,
+      }));
+      setOpportunitySpacesList(enrichedOpportunities);
+
+      // Populate concepts
+      const allConcepts = preEnrichedData.opportunities.flatMap((opp) => opp.concepts);
+      setConceptsList(allConcepts);
+
+      // Set the first opportunity as selected and show concepts view
+      if (enrichedOpportunities.length > 0) {
+        setSelectedOpportunityId(enrichedOpportunities[0].id);
+        setConceptsView(true);
+        setExpandAllOpportunities(true);
+      }
+
+      // Switch to opportunity spaces view
+      setSelectedProjectName(null);
+      setFlowView("opportunitySpaces");
+      return;
+    }
+
+    // Fallback: enrich on-demand if not pre-enriched
+    setEnrichingProject(true);
+    try {
+      const response = await fetch("/api/enrich-project", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ opportunities }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Enrichment request failed");
+      }
+
+      const data = await response.json();
+      if (data.opportunities && Array.isArray(data.opportunities)) {
+        // Populate opportunity spaces
+        const enrichedOpportunities = data.opportunities.map((opp: any) => ({
+          id: opp.id,
+          title: opp.title,
+          snippet: opp.snippet,
+          score: opp.score,
+          image: opp.image,
+          benefits: opp.benefits,
+          consumerGoals: opp.consumerGoals,
+          painPoints: opp.painPoints,
+        }));
+        setOpportunitySpacesList(enrichedOpportunities);
+
+        // Populate concepts
+        const allConcepts = data.opportunities.flatMap((opp: any) => opp.concepts);
+        setConceptsList(allConcepts);
+
+        // Set the first opportunity as selected and show concepts view
+        if (enrichedOpportunities.length > 0) {
+          setSelectedOpportunityId(enrichedOpportunities[0].id);
+          setConceptsView(true);
+          setExpandAllOpportunities(true);
+        }
+
+        // Switch to opportunity spaces view
+        setSelectedProjectName(null);
+        setFlowView("opportunitySpaces");
+      }
+    } catch (error) {
+      console.error("Enrichment error:", error);
+      // Fallback: just switch to empty opportunity spaces view
+      setSelectedProjectName(null);
+      setFlowView("opportunitySpaces");
+    } finally {
+      setEnrichingProject(false);
+    }
+  }
 
   // When on Insights Studio loading screen: call AI to generate insights from research scope (or use defaults), then transition
   useEffect(() => {
@@ -625,6 +811,7 @@ export function BasePrototype({ theme, brand, content, features, enableAIGenerat
 
   useEffect(() => {
     if (!selectedProjectName) return;
+    if (!enableAIGeneratedContent) return;
     if (firstRecentProjectDetail?.projectTitle === selectedProjectName) return;
     if (projectDetailCache[selectedProjectName]) return;
     setProjectDetailError(null);
@@ -644,7 +831,7 @@ export function BasePrototype({ theme, brand, content, features, enableAIGenerat
       })
       .catch(() => setProjectDetailError("Failed to load project detail"))
       .finally(() => setProjectDetailLoading(false));
-  }, [selectedProjectName, briefSummary, firstRecentProjectDetail?.projectTitle]);
+  }, [selectedProjectName, briefSummary, firstRecentProjectDetail?.projectTitle, enableAIGeneratedContent]);
 
   const cssVars: React.CSSProperties = {
     ["--color-primary" as string]: theme.colors.primary,
@@ -1220,7 +1407,7 @@ export function BasePrototype({ theme, brand, content, features, enableAIGenerat
                       <>
                         <div className="space-y-6">
                           {conceptsByOpportunity.map((opp) => {
-                            const isClickableOpp = opp.id === "1" || opp.id === "2";
+                            const isClickableOpp = opp.concepts.length > 0;
                             const baseClass = `flex w-full gap-2 rounded-xl border-2 p-3 text-left transition-all duration-200 ${
                               selectedOpportunityId === opp.id && !selectedConceptId
                                 ? "border-[var(--color-selected-border)] bg-[var(--color-selected-background)] shadow-md shadow-slate-200/50"
@@ -1236,6 +1423,7 @@ export function BasePrototype({ theme, brand, content, features, enableAIGenerat
                                     setSelectedConceptId(null);
                                     setValidationReportView(false);
                                     setInputSettingsReadOnlyStep(null);
+                                    setExpandAllOpportunities(false);
                                   }}
                                   className={baseClass}
                                 >
@@ -1262,7 +1450,7 @@ export function BasePrototype({ theme, brand, content, features, enableAIGenerat
                                   </span>
                                 </div>
                               )}
-                              {opp.id === selectedOpportunityId &&
+                              {(opp.id === selectedOpportunityId || expandAllOpportunities) &&
                                 <div className="relative z-0">
                                   {opp.concepts.map((concept) => (
                                 <div key={concept.id} className="mb-4 space-y-1.5 pl-3 border-l-2 border-slate-300/50 ml-1.5 last:mb-0">
@@ -1896,29 +2084,51 @@ export function BasePrototype({ theme, brand, content, features, enableAIGenerat
 
                 {flowView === "opportunitySpaces" && inputSettingsReadOnlyStep === null && conceptsView && validationReportView && selectedConcept && (
                   <div className="max-w-4xl">
+                    <button
+                      type="button"
+                      onClick={() => setValidationReportView(false)}
+                      className="mb-3 inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-800"
+                    >
+                      <ChevronLeft className="h-3 w-3" />
+                      <span>Back to concept</span>
+                    </button>
                     <div className="mb-6">
                       <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-                        {c("validationReportTitle")}: {selectedConcept.title}
+                        Concept validation: {selectedConcept.title}
                       </h1>
-                      <p className="mt-2 text-sm leading-relaxed text-slate-600">{selectedConcept.overview}</p>
                     </div>
-                    <div className="mb-8 grid grid-cols-4 gap-4">
-                      <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-                        <p className="mb-1 text-xs font-semibold text-slate-600">{c("validationDesirabilityLabel")}</p>
+                    <div className="mb-8 grid grid-cols-3 gap-4" role="tablist" aria-label="Validation dimensions">
+                      {/* Active tab: Desirability */}
+                      <div
+                        className="rounded-lg border-2 border-[var(--color-primary)] bg-[var(--color-primary)]/10 p-4 shadow-md ring-2 ring-[var(--color-primary)]/20"
+                        role="tab"
+                        aria-selected="true"
+                      >
+                        <p className="mb-1 text-xs font-semibold text-[var(--color-primary)]">
+                          {c("validationDesirabilityLabel")}
+                        </p>
                         <div className="flex items-center gap-2">
-                          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-lg font-bold text-emerald-800">83</span>
+                          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-lg font-bold text-emerald-800">
+                            {validationResults[selectedConcept.id]?.[0]?.desirabilityScore ?? 83}
+                          </span>
                           <span className="text-sm font-medium text-emerald-700">High</span>
                         </div>
                         <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-100">
-                          <div className="h-full w-[83%] rounded-full bg-emerald-500" />
+                          <div className="h-full rounded-full bg-emerald-500" style={{ width: `${validationResults[selectedConcept.id]?.[0]?.desirabilityScore ?? 83}%` }} />
                         </div>
                       </div>
-                      <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-4 shadow-sm">
-                        <p className="mb-2 text-xs font-semibold text-slate-600">{c("validationOpportunitySizeLabel")}</p>
+                      {/* Inactive tab: Opportunity Size (future view) */}
+                      <div
+                        className="rounded-lg border border-slate-200 bg-slate-50 p-4 shadow-sm opacity-60 cursor-not-allowed"
+                        role="tab"
+                        aria-selected="false"
+                      >
+                        <p className="mb-2 text-xs font-semibold text-slate-600">
+                          {c("validationOpportunitySizeLabel")}
+                        </p>
                         <div className="flex flex-col gap-2">
                           <div className="flex items-baseline justify-between gap-2">
                             <span className="text-lg font-bold tabular-nums text-slate-900">$1.2B – $1.5B</span>
-                            <span className="rounded bg-slate-200/70 px-2 py-0.5 text-xs font-medium text-slate-700">High</span>
                           </div>
                           <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200">
                             <div className="h-full rounded-full bg-slate-400" style={{ width: "60%" }} title="Sizing range" />
@@ -1926,8 +2136,15 @@ export function BasePrototype({ theme, brand, content, features, enableAIGenerat
                           <p className="text-[10px] text-slate-500">TAM range · midpoint ~$1.35B</p>
                         </div>
                       </div>
-                      <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-                        <p className="mb-1 text-xs font-semibold text-slate-600">{c("validationFeasibilityLabel")}</p>
+                      {/* Inactive tab: Feasibility (future view) */}
+                      <div
+                        className="rounded-lg border border-slate-200 bg-slate-50 p-4 shadow-sm opacity-60 cursor-not-allowed"
+                        role="tab"
+                        aria-selected="false"
+                      >
+                        <p className="mb-1 text-xs font-semibold text-slate-600">
+                          {c("validationFeasibilityLabel")}
+                        </p>
                         <div className="flex items-center gap-2">
                           <span className="flex h-12 w-12 items-center justify-center rounded-full bg-amber-100 text-lg font-bold text-amber-800">72</span>
                           <span className="text-sm font-medium text-amber-700">Medium</span>
@@ -1936,66 +2153,72 @@ export function BasePrototype({ theme, brand, content, features, enableAIGenerat
                           <div className="h-full w-[72%] rounded-full bg-amber-500" />
                         </div>
                       </div>
-                      <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-                        <p className="mb-1 text-xs font-semibold text-slate-600">Viability</p>
-                        <div className="flex items-center gap-2">
-                          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-100 text-lg font-bold text-blue-800">78</span>
-                          <span className="text-sm font-medium text-blue-700">High</span>
-                        </div>
-                        <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-100">
-                          <div className="h-full w-[78%] rounded-full bg-blue-500" />
-                        </div>
-                      </div>
                     </div>
                     <div className="space-y-6">
                       {[
                         { id: "usa", label: "United States", flag: "🇺🇸" },
                         { id: "brazil", label: "Brazil", flag: "🇧🇷" },
                         { id: "mexico", label: "Mexico", flag: "🇲🇽" },
-                      ].map((region) => (
-                        <div key={region.id} className="rounded-lg border border-slate-200 bg-white overflow-hidden">
-                          <button
-                            type="button"
-                            onClick={() => setValidationRegionCollapsed((s) => ({ ...s, [region.id]: !s[region.id] }))}
-                            className="flex w-full items-center justify-between bg-slate-50 px-4 py-3 text-left"
-                          >
-                            <span className="flex items-center gap-2 font-semibold text-slate-900">
-                              <span className="text-lg">{region.flag}</span>
-                              {region.label}
-                            </span>
-                            {validationRegionCollapsed[region.id] ? (
-                              <ChevronDown className="h-4 w-4 text-slate-500" />
-                            ) : (
-                              <Minus className="h-4 w-4 text-slate-500" />
+                      ].map((region, regionIndex) => {
+                        const countryData = validationResults[selectedConcept.id]?.[regionIndex];
+                        return (
+                          <div key={region.id} className="rounded-lg border border-slate-200 bg-white overflow-hidden">
+                            <button
+                              type="button"
+                              onClick={() => setValidationRegionCollapsed((s) => ({ ...s, [region.id]: !s[region.id] }))}
+                              className="flex w-full items-center justify-between bg-slate-50 px-4 py-3 text-left"
+                            >
+                              <span className="flex items-center gap-2 font-semibold text-slate-900">
+                                <span className="text-lg">{region.flag}</span>
+                                {region.label}
+                              </span>
+                              {validationRegionCollapsed[region.id] ? (
+                                <ChevronDown className="h-4 w-4 text-slate-500" />
+                              ) : (
+                                <Minus className="h-4 w-4 text-slate-500" />
+                              )}
+                            </button>
+                            {!validationRegionCollapsed[region.id] && (
+                              <div className="p-4 space-y-4">
+                                <div className="flex items-center gap-2">
+                                  <span className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-sm font-bold text-emerald-800">
+                                    {countryData?.desirabilityScore ?? 81}
+                                  </span>
+                                  <span className="text-sm font-medium text-slate-700">{c("validationDesirabilityLabel")}</span>
+                                </div>
+                                <div className="mt-3 space-y-2 text-sm">
+                                  {[
+                                    { label: "Solution-Problem Fit", key: "solutionProblemFit" as const },
+                                    { label: "Consumer Journey Fit", key: "consumerJourneyFit" as const },
+                                    { label: "Differentiation", key: "differentiation" as const },
+                                    { label: "Future Fit", key: "futureFit" as const },
+                                  ].map((crit, i) => (
+                                    <div key={i} className="flex items-center gap-2">
+                                      <Check className="h-4 w-4 flex-shrink-0 text-emerald-600" />
+                                      <span className="text-slate-700">{crit.label}</span>
+                                      <span className="ml-auto font-medium text-slate-900">
+                                        {countryData?.subcriteria[crit.key] ?? 82}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                                <div>
+                                  <p className="mb-1 text-xs font-semibold text-slate-600">{c("validationWhatResonates")}</p>
+                                  <p className="text-xs text-slate-600">
+                                    {countryData?.whatResonates ?? "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua."}
+                                  </p>
+                                </div>
+                                <div>
+                                  <p className="mb-1 text-xs font-semibold text-slate-600">{c("validationBarriers")}</p>
+                                  <p className="text-xs text-slate-600">
+                                    {countryData?.barriers ?? "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Ut enim ad minim veniam, quis nostrud exercitation."}
+                                  </p>
+                                </div>
+                              </div>
                             )}
-                          </button>
-                          {!validationRegionCollapsed[region.id] && (
-                            <div className="p-4 space-y-4">
-                              <div className="flex items-center gap-2">
-                                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-sm font-bold text-emerald-800">81</span>
-                                <span className="text-sm font-medium text-slate-700">{c("validationDesirabilityLabel")}</span>
-                              </div>
-                              <div className="grid grid-cols-2 gap-2 text-sm">
-                                {["Solution-Problem Fit", "Differentiation", "Consumer Journey Fit", "Future Fit"].map((crit, i) => (
-                                  <div key={i} className="flex items-center gap-2">
-                                    <Check className="h-4 w-4 flex-shrink-0 text-emerald-600" />
-                                    <span className="text-slate-700">{crit}</span>
-                                    <span className="ml-auto font-medium text-slate-900">82</span>
-                                  </div>
-                                ))}
-                              </div>
-                              <div>
-                                <p className="mb-1 text-xs font-semibold text-slate-600">{c("validationWhatResonates")}</p>
-                                <p className="text-xs text-slate-600">Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.</p>
-                              </div>
-                              <div>
-                                <p className="mb-1 text-xs font-semibold text-slate-600">{c("validationBarriers")}</p>
-                                <p className="text-xs text-slate-600">Lorem ipsum dolor sit amet, consectetur adipiscing elit. Ut enim ad minim veniam, quis nostrud exercitation.</p>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      ))}
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -2020,17 +2243,19 @@ export function BasePrototype({ theme, brand, content, features, enableAIGenerat
                       </div>
                     </div>
 
-                    {validatedConceptIds.has(selectedConceptId ?? "") && (
+                    {validatedConceptIds.has(selectedConceptId ?? "") && selectedConcept && (
                       <div className="mt-6 grid grid-cols-4 gap-4">
                         <div className="flex flex-col justify-between rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
                           <p className="mb-2 text-xs font-semibold text-slate-600">{c("validationDesirabilityLabel")}</p>
                           <div>
                             <div className="flex items-center gap-2 mb-2">
-                              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-base font-bold text-emerald-800">83</span>
+                              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-base font-bold text-emerald-800">
+                                {validationResults[selectedConcept.id]?.[0]?.desirabilityScore ?? 83}
+                              </span>
                               <span className="text-sm font-medium text-emerald-700">High</span>
                             </div>
                             <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
-                              <div className="h-full w-[83%] rounded-full bg-emerald-500" />
+                              <div className="h-full rounded-full bg-emerald-500" style={{ width: `${validationResults[selectedConcept.id]?.[0]?.desirabilityScore ?? 83}%` }} />
                             </div>
                           </div>
                         </div>
@@ -2428,14 +2653,25 @@ export function BasePrototype({ theme, brand, content, features, enableAIGenerat
                 ) : conceptsView && selectedConceptId ? (
                   <button
                     type="button"
-                    className="flex items-center gap-2 rounded-lg border-2 border-[var(--color-primary)] bg-[var(--color-primary)] px-5 py-2.5 text-sm font-semibold text-[var(--color-primary-foreground)] hover:opacity-90"
+                    disabled={validatingConcept}
+                    className={`flex items-center gap-2 rounded-lg border-2 border-[var(--color-primary)] bg-[var(--color-primary)] px-5 py-2.5 text-sm font-semibold text-[var(--color-primary-foreground)] hover:opacity-90 ${validatingConcept ? "cursor-not-allowed opacity-80" : ""}`}
                     onClick={() => {
-                      setValidationReportView(true);
-                      setValidatedConceptIds((prev) => new Set(prev).add(selectedConceptId));
+                      if (selectedConcept) {
+                        validateConcept(selectedConcept);
+                      }
                     }}
                   >
-                    {c("validateButton")}
-                    <ArrowRight className="h-4 w-4" />
+                    {validatingConcept ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Validating...
+                      </>
+                    ) : (
+                      <>
+                        {c("validateButton")}
+                        <ArrowRight className="h-4 w-4" />
+                      </>
+                    )}
                   </button>
                 ) : (
                   <button
@@ -2558,7 +2794,7 @@ export function BasePrototype({ theme, brand, content, features, enableAIGenerat
               <Loader2 className="h-10 w-10 animate-spin text-[var(--color-primary)]" />
               <p className="text-sm text-[var(--color-muted)]">Generating project detail from brief…</p>
             </div>
-          ) : projectDetailError ? (
+          ) : projectDetailError && enableAIGeneratedContent ? (
             <div className="flex flex-col items-center gap-4 rounded-xl border border-slate-200 bg-slate-50 p-8 text-center">
               <AlertTriangle className="h-10 w-10 text-amber-500" />
               <p className="text-sm text-slate-700">{projectDetailError}</p>
@@ -2596,41 +2832,54 @@ export function BasePrototype({ theme, brand, content, features, enableAIGenerat
           ) : (() => {
             const fromPreGenerated = firstRecentProjectDetail?.projectTitle === selectedProjectName ? firstRecentProjectDetail?.opportunities : undefined;
             const cached = selectedProjectName ? projectDetailCache[selectedProjectName] : null;
-            const projectDetailOpportunities = fromPreGenerated ?? cached?.opportunities ?? [];
+            const projectDetailOpportunities =
+              !enableAIGeneratedContent ? STATIC_PROJECT_DETAIL_OPPORTUNITIES : fromPreGenerated ?? cached?.opportunities ?? [];
             if (projectDetailOpportunities.length === 0) return null;
-            return (
+                return (
               <div className="space-y-10">
                 {projectDetailOpportunities.map((opp) => (
                   <section key={opp.id} className="rounded-xl border border-[var(--color-border)] bg-white p-6 shadow-sm">
                     <h2 className="mb-1 text-lg font-semibold text-[var(--color-foreground)]">{opp.title}</h2>
                     <p className="mb-5 text-sm text-[var(--color-muted)]">{opp.snippet}</p>
                     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                      {opp.concepts.map((concept) => (
-                        <div
-                          key={concept.id}
-                          className="flex flex-col overflow-hidden rounded-lg border border-slate-200 bg-slate-50 shadow-sm transition hover:border-[var(--color-primary)]/40 hover:shadow"
-                        >
-                          <img src={concept.image} alt="" className="h-32 w-full object-cover" />
-                          <div className="flex flex-1 flex-col p-3">
-                            <p className="text-sm font-semibold text-slate-900 line-clamp-2">{concept.title}</p>
-                            <p className="mt-1 line-clamp-2 text-xs text-slate-600">{concept.overview}</p>
+                      {opp.concepts.map((concept) => {
+                        const fallbackImage =
+                          "https://images.unsplash.com/photo-1519389950473-47ba0277781c?auto=format&fit=crop&w=800&q=80";
+                        const imgSrc = enableAIGeneratedContent ? concept.image : fallbackImage;
+                        return (
+                          <div
+                            key={concept.id}
+                            className="flex flex-col overflow-hidden rounded-lg border border-slate-200 bg-slate-50 shadow-sm transition hover:border-[var(--color-primary)]/40 hover:shadow"
+                          >
+                            <img src={imgSrc} alt={concept.title ?? ""} className="h-32 w-full object-cover" />
+                            <div className="flex flex-1 flex-col p-3">
+                              <p className="text-sm font-semibold text-slate-900 line-clamp-2">{concept.title}</p>
+                              <p className="mt-1 line-clamp-2 text-xs text-slate-600">{concept.overview}</p>
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </section>
                 ))}
                 <div className="flex justify-end pt-4">
                   <button
                     type="button"
-                    onClick={() => {
-                      setSelectedProjectName(null);
-                      setFlowView("opportunitySpaces");
-                    }}
-                    className="flex items-center gap-2 rounded-lg border-2 border-[var(--color-primary)] bg-[var(--color-primary)] px-5 py-2.5 text-sm font-semibold text-[var(--color-primary-foreground)] hover:opacity-90"
+                    disabled={enrichingProject}
+                    onClick={() => openInInnovationFlow(projectDetailOpportunities)}
+                    className={`flex items-center gap-2 rounded-lg border-2 border-[var(--color-primary)] bg-[var(--color-primary)] px-5 py-2.5 text-sm font-semibold text-[var(--color-primary-foreground)] hover:opacity-90 ${enrichingProject ? "cursor-not-allowed opacity-80" : ""}`}
                   >
-                    Open in Innovation Flow
-                    <ChevronRight className="h-4 w-4" />
+                    {enrichingProject ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Loading innovation flow...
+                      </>
+                    ) : (
+                      <>
+                        Open in Innovation Flow
+                        <ChevronRight className="h-4 w-4" />
+                      </>
+                    )}
                   </button>
                 </div>
               </div>

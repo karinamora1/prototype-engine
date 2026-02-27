@@ -100,6 +100,20 @@ export default function DashboardPage() {
             </div>
             <span className="text-slate-500 transition group-hover:translate-x-1 group-hover:text-amber-400" aria-hidden>→</span>
           </Link>
+
+          <Link
+            href="/architecture"
+            className="group flex w-full items-center gap-4 rounded-2xl border border-white/10 bg-white/5 p-6 shadow-lg backdrop-blur-sm transition-all duration-200 hover:border-emerald-500/40 hover:bg-white/10 hover:shadow-emerald-500/10"
+          >
+            <span className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-400 transition group-hover:bg-emerald-500/30">
+              <Sparkles className="h-6 w-6" aria-hidden />
+            </span>
+            <div className="min-w-0 flex-1 text-left">
+              <h2 className="mb-0.5 font-semibold text-white">Explore Agentic Architecture</h2>
+              <p className="text-sm text-slate-400">See how the agentic prototype flow and architecture come together.</p>
+            </div>
+            <span className="text-slate-500 transition group-hover:translate-x-1 group-hover:text-emerald-400" aria-hidden>→</span>
+          </Link>
         </div>
       </div>
     </div>

@@ -5,6 +5,7 @@ import type { CreateInstanceInput, FirstRecentProjectDetail } from "@/lib/types"
 import { analyzeThemeImage } from "@/lib/ai-theme-from-image";
 import { generateProjectDetailWithAI, projectDetailImageFromQuery } from "@/lib/ai-project-detail";
 import { generateConceptImagesInParallel } from "@/lib/ai-concept-image";
+import { enrichProjectForInnovationFlow } from "@/lib/ai-enrich-project";
 
 /**
  * POST /api/instances/generate
@@ -63,21 +64,27 @@ export async function POST(request: NextRequest) {
       );
       const imageUrls = await generateConceptImagesInParallel(allConcepts);
       let idx = 0;
+      const basicOpportunities = opportunities.map((opp) => ({
+        ...opp,
+        concepts: opp.concepts.map((c) => {
+          const url = imageUrls[idx] ?? projectDetailImageFromQuery(c.imageQuery);
+          idx += 1;
+          return {
+            id: c.id,
+            title: c.title,
+            overview: c.overview,
+            image: url,
+          };
+        }),
+      }));
+
+      // Enrich the opportunities for innovation flow (adds all strategic details)
+      const enrichedOpportunities = await enrichProjectForInnovationFlow(basicOpportunities);
+
       const firstRecentProjectDetail: FirstRecentProjectDetail = {
         projectTitle: firstProjectName,
-        opportunities: opportunities.map((opp) => ({
-          ...opp,
-          concepts: opp.concepts.map((c) => {
-            const url = imageUrls[idx] ?? projectDetailImageFromQuery(c.imageQuery);
-            idx += 1;
-            return {
-              id: c.id,
-              title: c.title,
-              overview: c.overview,
-              image: url,
-            };
-          }),
-        })),
+        opportunities: basicOpportunities,
+        enrichedForInnovationFlow: enrichedOpportunities ? { opportunities: enrichedOpportunities } : undefined,
       };
       input.firstRecentProjectDetail = firstRecentProjectDetail;
     }

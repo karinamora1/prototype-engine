@@ -1,5 +1,0 @@
-{"sessionId":"cb32aa","location":"app/page.tsx:LandingPage","message":"Landing render","data":{},"timestamp":1772147879341,"hypothesisId":"B"}
-{"sessionId":"cb32aa","location":"app/page.tsx:LandingPage","message":"Landing render","data":{},"timestamp":1772147879348,"hypothesisId":"B"}
-{"sessionId":"cb32aa","location":"app/page.tsx:LandingPage","message":"Landing render","data":{},"timestamp":1772147880247,"hypothesisId":"B"}
-{"sessionId":"cb32aa","location":"app/page.tsx:LandingPage","message":"Landing render","data":{},"timestamp":1772147880247,"hypothesisId":"B"}
-{"sessionId":"cb32aa","location":"app/dashboard/page.tsx:effect","message":"Dashboard unlock check","data":{"mounted":true,"unlocked":true,"storageValue":"1"},"timestamp":1772147881820,"hypothesisId":"C"}
