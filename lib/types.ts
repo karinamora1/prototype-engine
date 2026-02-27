@@ -71,6 +71,10 @@ export interface PrototypeInstance {
   briefSummary: string;
   /** Pre-generated detail for the first recent project (2 opportunities + concepts). Generated at instance creation. */
   firstRecentProjectDetail?: FirstRecentProjectDetail | null;
+  /** If set, this instance is a published copy of the instance with this id. Hidden from library; view at /p/[slug]. */
+  sourceInstanceId?: string;
+  /** If set, this instance has been published; the published page is at /p/[publishedSlug]. */
+  publishedSlug?: string;
 }
 
 /** Instance as returned by API (no password hash); use for client view */
@@ -79,6 +83,8 @@ export type PrototypeInstanceView = Omit<PrototypeInstance, "passwordHash"> & { 
 /** Input when creating an instance (e.g. from a brief) */
 export interface CreateInstanceInput {
   name: string;
+  /** Optional; if not provided, derived from name. Use for published pages to ensure unique URL. */
+  slug?: string;
   theme: BrandTheme;
   brand: BrandIdentity;
   content: ContentMap;
@@ -87,6 +93,8 @@ export interface CreateInstanceInput {
   briefSummary: string;
   /** Optional; if not provided, generated at create time from brief + first recent project name. */
   firstRecentProjectDetail?: FirstRecentProjectDetail | null;
+  /** When creating a published copy, set to the source instance id so the copy is hidden from the library. */
+  sourceInstanceId?: string;
 }
 
 /** Default theme (e.g. Glade) — used as fallback and template */

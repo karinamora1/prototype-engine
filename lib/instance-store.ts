@@ -6,10 +6,19 @@
 import { promises as fs } from "fs";
 import path from "path";
 import { nanoid } from "nanoid";
-import type { PrototypeInstance, CreateInstanceInput } from "./types";
+import type { PrototypeInstance, CreateInstanceInput, ContentMap } from "./types";
 
 const DATA_DIR = path.join(process.cwd(), "data", "instances");
 const INDEX_FILE = path.join(process.cwd(), "data", "index.json");
+
+export type IndexEntry = {
+  id: string;
+  name: string;
+  slug: string;
+  createdAt: string;
+  sourceInstanceId?: string;
+  publishedSlug?: string;
+};
 
 function slugify(name: string): string {
   return name
@@ -38,17 +47,25 @@ export async function ensureDataDir(): Promise<void> {
   }
 }
 
-async function readIndex(): Promise<{ id: string; name: string; slug: string; createdAt: string }[]> {
+async function readIndex(): Promise<IndexEntry[]> {
   await ensureDataDir();
   try {
     const raw = await fs.readFile(INDEX_FILE, "utf-8");
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.map((e: Record<string, unknown>) => ({
+      id: String(e.id ?? ""),
+      name: String(e.name ?? ""),
+      slug: String(e.slug ?? ""),
+      createdAt: String(e.createdAt ?? ""),
+      sourceInstanceId: e.sourceInstanceId != null ? String(e.sourceInstanceId) : undefined,
+      publishedSlug: e.publishedSlug != null ? String(e.publishedSlug) : undefined,
+    })) : [];
   } catch {
     return [];
   }
 }
 
-async function writeIndex(entries: { id: string; name: string; slug: string; createdAt: string }[]): Promise<void> {
+async function writeIndex(entries: IndexEntry[]): Promise<void> {
   await ensureDataDir();
   await fs.writeFile(INDEX_FILE, JSON.stringify(entries, null, 2), "utf-8");
 }
@@ -56,7 +73,7 @@ async function writeIndex(entries: { id: string; name: string; slug: string; cre
 export async function createInstance(input: CreateInstanceInput): Promise<PrototypeInstance> {
   await ensureDataDir();
   const id = nanoid(10);
-  const slug = slugify(input.name);
+  const slug = input.slug ?? slugify(input.name);
   const now = new Date().toISOString();
   const instance: PrototypeInstance = {
     id,
@@ -71,13 +88,44 @@ export async function createInstance(input: CreateInstanceInput): Promise<Protot
     passwordHash: input.password ? simpleHash(input.password) : null,
     briefSummary: input.briefSummary,
     firstRecentProjectDetail: input.firstRecentProjectDetail ?? undefined,
+    sourceInstanceId: input.sourceInstanceId,
   };
   const filePath = path.join(DATA_DIR, `${id}.json`);
   await fs.writeFile(filePath, JSON.stringify(instance, null, 2), "utf-8");
   const index = await readIndex();
-  index.push({ id, name: input.name, slug, createdAt: now });
+  index.push({
+    id,
+    name: input.name,
+    slug,
+    createdAt: now,
+    sourceInstanceId: input.sourceInstanceId,
+  });
   await writeIndex(index);
   return instance;
+}
+
+/**
+ * Create a copy of an existing instance (e.g. for "Publish"). Uses a unique slug for the new instance.
+ */
+export async function duplicateInstance(
+  sourceId: string,
+  options: { name: string; password?: string }
+): Promise<PrototypeInstance | null> {
+  const source = await getInstance(sourceId);
+  if (!source) return null;
+  const uniqueSlug = slugify(options.name) + "-" + nanoid(6);
+  return createInstance({
+    name: options.name,
+    slug: uniqueSlug,
+    theme: source.theme,
+    brand: source.brand,
+    content: { ...source.content },
+    features: { ...source.features },
+    password: options.password,
+    briefSummary: source.briefSummary,
+    firstRecentProjectDetail: source.firstRecentProjectDetail ?? undefined,
+    sourceInstanceId: sourceId,
+  });
 }
 
 export async function getInstance(id: string): Promise<PrototypeInstance | null> {
@@ -97,16 +145,31 @@ export async function getInstanceBySlug(slug: string): Promise<PrototypeInstance
   return getInstance(entry.id);
 }
 
-export async function listInstances(): Promise<{ id: string; name: string; slug: string; createdAt: string }[]> {
+export async function listInstances(): Promise<IndexEntry[]> {
   const index = await readIndex();
-  return index.sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1));
+  const filtered = index.filter((e) => !e.sourceInstanceId);
+  return filtered.sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1));
 }
 
-export async function searchInstances(query: string): Promise<{ id: string; name: string; slug: string; createdAt: string }[]> {
+export async function searchInstances(query: string): Promise<IndexEntry[]> {
   const index = await readIndex();
+  const filtered = index.filter((e) => !e.sourceInstanceId);
   const q = query.toLowerCase().trim();
-  if (!q) return index.sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1));
-  return index.filter((e) => e.name.toLowerCase().includes(q) || e.slug.includes(q));
+  if (!q) return filtered.sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1));
+  return filtered.filter((e) => e.name.toLowerCase().includes(q) || e.slug.includes(q));
+}
+
+/** Update an index entry (e.g. set publishedSlug on the source after publishing). */
+export async function updateIndexEntry(
+  id: string,
+  updates: { publishedSlug?: string }
+): Promise<boolean> {
+  const index = await readIndex();
+  const entry = index.find((e) => e.id === id);
+  if (!entry) return false;
+  if (updates.publishedSlug !== undefined) entry.publishedSlug = updates.publishedSlug;
+  await writeIndex(index);
+  return true;
 }
 
 export function verifyPassword(instance: PrototypeInstance, password: string): boolean {
@@ -133,12 +196,16 @@ export async function deleteInstance(id: string): Promise<boolean> {
 }
 
 /**
- * Update an existing instance (partial update). Merges theme colors if provided.
- * Returns the updated instance or null if not found.
+ * Update an existing instance (partial update). Merges theme colors and/or content if provided.
+ * publishedSlug can be set when publishing (so the source instance tracks its published URL).
  */
 export async function updateInstance(
   id: string,
-  updates: { theme?: Partial<PrototypeInstance["theme"]> }
+  updates: {
+    theme?: Partial<PrototypeInstance["theme"]>;
+    content?: Partial<ContentMap>;
+    publishedSlug?: string;
+  }
 ): Promise<PrototypeInstance | null> {
   const instance = await getInstance(id);
   if (!instance) return null;
@@ -156,6 +223,12 @@ export async function updateInstance(
         typography: { ...instance.theme.typography, ...updates.theme.typography },
       };
     }
+  }
+  if (updates.content != null && typeof updates.content === "object") {
+    instance.content = { ...instance.content, ...updates.content };
+  }
+  if (updates.publishedSlug !== undefined) {
+    instance.publishedSlug = updates.publishedSlug;
   }
   instance.updatedAt = now;
   const filePath = path.join(DATA_DIR, `${id}.json`);

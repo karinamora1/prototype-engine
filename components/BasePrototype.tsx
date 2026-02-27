@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { ChevronLeft, ChevronRight, X, Clock, Zap, FileText, ExternalLink, TrendingUp, Globe, ArrowRight, Target, Search, Home, Pencil, ChevronDown, AlertTriangle, Info, Loader2, Trash2, Leaf, Lightbulb, Droplets, Sparkles, Lock, Minus, Check, EllipsisVertical, Megaphone, Tag, SprayCan, Flower2, LogOut } from "lucide-react";
+import { ChevronLeft, ChevronRight, X, Clock, Zap, FileText, ExternalLink, TrendingUp, Globe, ArrowRight, Target, Search, Home, ChevronDown, AlertTriangle, Info, Loader2, Trash2, Leaf, Lightbulb, Droplets, Sparkles, Lock, Minus, Check, EllipsisVertical, Megaphone, Tag, SprayCan, Flower2, LogOut } from "lucide-react";
 import type { BrandTheme, BrandIdentity, ContentMap, FeatureFlags, FirstRecentProjectDetail } from "@/lib/types";
+import { buildFullEditContent } from "@/lib/content-editor-utils";
 
 export interface BasePrototypeProps {
   theme: BrandTheme;
@@ -15,6 +16,12 @@ export interface BasePrototypeProps {
   briefSummary?: string;
   /** Pre-generated detail for the first recent project (from instance creation). When present, used instead of fetching. */
   firstRecentProjectDetail?: FirstRecentProjectDetail | null;
+  /** When true, dashboard home text is editable and Save button exits edit mode. */
+  editMode?: boolean;
+  /** Called when user saves in edit mode; pass updated content to persist. Only the instance is updated—not the base prototype or defaults. */
+  onSaveContent?: (content: ContentMap) => void | Promise<void>;
+  /** Called when the main flow view changes (e.g. "dashboard", "defineScope"). Use to show/hide Edit mode only on dashboard. */
+  onFlowViewChange?: (flowView: string) => void;
 }
 
 /** Parse comma-separated brand options from content; excludes "Global" and the client/project name (brand.name). */
@@ -28,12 +35,107 @@ function parseBrandOptions(content: ContentMap, brandName: string): string[] {
   return opts.length > 0 ? opts : ["Brand"];
 }
 
+type InlineEditableProps = {
+  contentKey: string;
+  value: string;
+  setValue: (v: string) => void;
+  isEditing: boolean;
+  onStartEdit: () => void;
+  onEndEdit: () => void;
+  as?: "span" | "h1" | "h2" | "p" | "div";
+  className?: string;
+  style?: React.CSSProperties;
+  multiline?: boolean;
+};
+
+function InlineEditable({
+  contentKey,
+  value,
+  setValue,
+  isEditing,
+  onStartEdit,
+  onEndEdit,
+  as: Tag = "span",
+  className = "",
+  style,
+  multiline,
+}: InlineEditableProps) {
+  const [localValue, setLocalValue] = useState(value);
+  const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (isEditing) {
+      setLocalValue(value);
+      inputRef.current?.focus();
+      if (multiline) (inputRef.current as HTMLTextAreaElement)?.select();
+      else (inputRef.current as HTMLInputElement)?.select();
+    }
+  }, [isEditing, value, multiline]);
+
+  const commit = () => {
+    setValue(localValue.trim());
+    onEndEdit();
+  };
+
+  if (!isEditing) {
+    return (
+      <Tag
+        className={`${className} ${value ? "" : "text-[var(--color-muted)]"} pointer-events-auto`}
+        style={style}
+        onDoubleClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onStartEdit();
+        }}
+        title="Double-click to edit"
+      >
+        {value || `[${contentKey}]`}
+      </Tag>
+    );
+  }
+
+  const inputClassName = "w-full min-w-0 rounded border border-[var(--color-primary)] bg-white px-2 py-1 text-inherit focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]";
+
+  if (multiline) {
+    return (
+      <textarea
+        ref={inputRef as React.RefObject<HTMLTextAreaElement>}
+        value={localValue}
+        onChange={(e) => setLocalValue(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            commit();
+          }
+        }}
+        rows={3}
+        className={inputClassName}
+      />
+    );
+  }
+
+  return (
+    <input
+      ref={inputRef as React.RefObject<HTMLInputElement>}
+      type="text"
+      value={localValue}
+      onChange={(e) => setLocalValue(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => e.key === "Enter" && commit()}
+      className={inputClassName}
+    />
+  );
+}
+
 /**
  * Innovation dashboard: fixed layout and structure; theme, brand, and copy are dynamic.
  * Two-column layout: sidebar + main content (opportunity cards, insights, personas, documents).
  */
-export function BasePrototype({ theme, brand, content, features, enableAIGeneratedContent = true, briefSummary, firstRecentProjectDetail }: BasePrototypeProps) {
+export function BasePrototype({ theme, brand, content, features, enableAIGeneratedContent = true, briefSummary, firstRecentProjectDetail, editMode = false, onSaveContent, onFlowViewChange }: BasePrototypeProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [editContent, setEditContent] = useState<ContentMap>(() => ({ ...content }));
+  const [editingContentKey, setEditingContentKey] = useState<string | null>(null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [selectedBrand, setSelectedBrand] = useState(content.selectorLabel ?? brand.name);
   const [expandedDocumentIndex, setExpandedDocumentIndex] = useState<number | null>(null);
@@ -69,6 +171,15 @@ export function BasePrototype({ theme, brand, content, features, enableAIGenerat
     styleDifferentiator: true,
   });
   const brandOptions = parseBrandOptions(content, brand.name);
+  useEffect(() => {
+    if (editMode) {
+      setEditContent(buildFullEditContent(content));
+      setFlowView("dashboard");
+    }
+  }, [editMode, content]);
+  useEffect(() => {
+    onFlowViewChange?.(flowView);
+  }, [flowView, onFlowViewChange]);
   useEffect(() => {
     const opts = parseBrandOptions(content, brand.name);
     if (opts.length > 0) {
@@ -555,6 +666,24 @@ export function BasePrototype({ theme, brand, content, features, enableAIGenerat
   };
 
   const c = (key: string) => content[key] ?? `[${key}]`;
+  const displayContent = editMode ? editContent : content;
+  const renderEditable = (
+    key: string,
+    opts?: { as?: "span" | "h1" | "h2" | "p" | "div"; className?: string; style?: React.CSSProperties; multiline?: boolean }
+  ) => {
+    if (!editMode) return <>{displayContent[key] ?? `[${key}]`}</>;
+    return (
+      <InlineEditable
+        contentKey={key}
+        value={editContent[key] ?? ""}
+        setValue={(v) => setEditContent((prev) => ({ ...prev, [key]: v }))}
+        isEditing={editingContentKey === key}
+        onStartEdit={() => setEditingContentKey(key)}
+        onEndEdit={() => setEditingContentKey(null)}
+        {...opts}
+      />
+    );
+  };
 
   return (
     <div
@@ -566,7 +695,7 @@ export function BasePrototype({ theme, brand, content, features, enableAIGenerat
         <aside
           className={`flex flex-shrink-0 flex-col transition-[width] duration-200 ${
             sidebarCollapsed ? "w-16" : "w-56"
-          }`}
+          } ${editMode ? "pointer-events-none" : ""}`}
           style={{
             background: "linear-gradient(to bottom, var(--color-primary), color-mix(in srgb, var(--color-primary) 55%, black))",
           }}
@@ -631,15 +760,15 @@ export function BasePrototype({ theme, brand, content, features, enableAIGenerat
               onClick={() => setSelectedProjectName(null)}
               className={`flex w-full rounded px-3 py-2 text-sm ${sidebarCollapsed ? "justify-center" : "gap-3"}`}
               style={{ background: "var(--color-accent)", color: "var(--color-accent-foreground)" }}
-              title={c("navHome")}
+              title={String(displayContent.navHome ?? "")}
             >
               <span aria-hidden>🏠</span>
-              {!sidebarCollapsed && c("navHome")}
+              {!sidebarCollapsed && (editMode ? renderEditable("navHome") : c("navHome"))}
             </button>
             <div className="py-2">
               {!sidebarCollapsed && (
                 <p className="px-3 py-1 text-xs font-semibold uppercase tracking-wider text-white/70">
-                  {c("navRecentProjects")}
+                  {editMode ? renderEditable("navRecentProjects") : c("navRecentProjects")}
                 </p>
               )}
               <ul className="mt-1 space-y-0.5">
@@ -676,16 +805,16 @@ export function BasePrototype({ theme, brand, content, features, enableAIGenerat
             <button
               type="button"
               className={`w-full rounded bg-white/10 px-3 py-2 text-sm font-medium text-white hover:bg-white/20 ${sidebarCollapsed ? "px-2 text-xs" : ""}`}
-              title={c("uploadDocument")}
+              title={String(displayContent.uploadDocument ?? "")}
             >
-              {sidebarCollapsed ? "↑" : c("uploadDocument")}
+              {sidebarCollapsed ? "↑" : (editMode ? renderEditable("uploadDocument") : c("uploadDocument"))}
             </button>
             <button
               type="button"
               className={`w-full rounded bg-white/10 px-3 py-2 text-sm font-medium text-white hover:bg-white/20 ${sidebarCollapsed ? "px-2 text-xs" : ""}`}
-              title={c("viewProjectLibrary")}
+              title={String(displayContent.viewProjectLibrary ?? "")}
             >
-              {sidebarCollapsed ? "📁" : c("viewProjectLibrary")}
+              {sidebarCollapsed ? "📁" : (editMode ? renderEditable("viewProjectLibrary") : c("viewProjectLibrary"))}
             </button>
           </div>
           <div className={`border-t border-white/10 ${sidebarCollapsed ? "p-2" : "p-3"}`}>
@@ -701,8 +830,8 @@ export function BasePrototype({ theme, brand, content, features, enableAIGenerat
             </button>
           </div>
           <div className={`p-3 ${sidebarCollapsed ? "text-center" : ""}`}>
-            <a href="#" className={`text-sm text-white/70 hover:text-white ${sidebarCollapsed ? "flex justify-center" : ""}`} title={c("logout")}>
-              {sidebarCollapsed ? <LogOut className="h-5 w-5" /> : c("logout")}
+            <a href="#" className={`text-sm text-white/70 hover:text-white ${sidebarCollapsed ? "flex justify-center" : ""}`} title={String(displayContent.logout ?? "")}>
+              {sidebarCollapsed ? <LogOut className="h-5 w-5" /> : (editMode ? renderEditable("logout") : c("logout"))}
             </a>
           </div>
         </aside>
@@ -2248,9 +2377,6 @@ export function BasePrototype({ theme, brand, content, features, enableAIGenerat
                   <span className="text-sm font-semibold text-slate-800">{brand.name}</span>
                   <span className="text-sm text-slate-600">{c("projectNameLabel")}</span>
                 </button>
-                <button type="button" className="rounded p-1.5 text-slate-500 hover:bg-slate-200 hover:text-slate-800" aria-label="Edit project name">
-                  <Pencil className="h-4 w-4" />
-                </button>
               </div>
               {flowView === "opportunitySpaces" ? (
                 inputSettingsReadOnlyStep !== null ? (
@@ -2493,64 +2619,111 @@ export function BasePrototype({ theme, brand, content, features, enableAIGenerat
         </div>
         ) : (
         <div className="mx-auto max-w-5xl px-6 py-8">
+          {editMode && (
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-background)] pb-4 mb-6">
+              <span className="text-sm text-[var(--color-muted)]">Double-click any text to edit</span>
+              <button
+                type="button"
+                onClick={() => onSaveContent?.(editContent)}
+                className="rounded-lg bg-[var(--color-primary)] px-5 py-2.5 text-sm font-semibold text-[var(--color-primary-foreground)] hover:opacity-90"
+              >
+                Save
+              </button>
+            </div>
+          )}
+            <div className={editMode ? "pointer-events-none" : undefined}>
+            <>
+          {editMode ? (
+            renderEditable("pageTitle", { as: "h1", className: "mb-8 text-2xl font-bold text-[var(--color-foreground)]", style: { fontSize: "var(--heading-size)" } })
+          ) : (
           <h1 className="mb-8 text-2xl font-bold text-[var(--color-foreground)]" style={{ fontSize: "var(--heading-size)" }}>
             {c("pageTitle")}
           </h1>
+          )}
 
           {/* Opportunity cards */}
           {features.opportunityCards !== false && (
             <section className="mb-10 grid gap-6 sm:grid-cols-3">
               <div className="flex flex-col justify-between rounded-lg border border-[var(--color-border)] bg-white p-5 shadow-sm">
                 <div>
+                  {editMode ? (
+                    <>
+                      {renderEditable("card1Title", { as: "h2", className: "mb-2 text-sm font-semibold text-[var(--color-foreground)]" })}
+                      {renderEditable("card1Body", { as: "p", className: "text-xs leading-snug text-[var(--color-muted)]", multiline: true })}
+                    </>
+                  ) : (
+                    <>
                   <h2 className="mb-2 text-sm font-semibold text-[var(--color-foreground)]">{c("card1Title")}</h2>
                   <p className="text-xs leading-snug text-[var(--color-muted)]">
                     {c("card1Body")}
                   </p>
+                    </>
+                  )}
                 </div>
                 <button
                   type="button"
                   onClick={() => setFlowView("defineScope")}
                   className="mt-6 rounded bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-[var(--color-primary-foreground)] hover:opacity-90"
                 >
-                  {c("generateButton")}
+                  {editMode ? displayContent.generateButton ?? "[generateButton]" : c("generateButton")}
                 </button>
               </div>
               <div className="flex flex-col justify-between rounded-lg border border-[var(--color-border)] bg-white p-5 shadow-sm">
                 <div>
+                  {editMode ? (
+                    <>
+                      {renderEditable("card2Title", { as: "h2", className: "mb-2 text-sm font-semibold text-[var(--color-foreground)]" })}
+                      {renderEditable("card2Body", { as: "p", className: "text-xs leading-snug text-[var(--color-muted)]", multiline: true })}
+                    </>
+                  ) : (
+                    <>
                   <h2 className="mb-2 text-sm font-semibold text-[var(--color-foreground)]">{c("card2Title")}</h2>
                   <p className="text-xs leading-snug text-[var(--color-muted)]">
                     {c("card2Body")}
                   </p>
+                    </>
+                  )}
                 </div>
                 <button
                   type="button"
                   className="mt-6 rounded bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-[var(--color-primary-foreground)] hover:opacity-90"
                 >
-                  {c("generateButton")}
+                  {editMode ? displayContent.generateButton ?? "[generateButton]" : c("generateButton")}
                 </button>
               </div>
               <div className="flex flex-col justify-between rounded-lg border border-[var(--color-border)] bg-white p-5 shadow-sm">
                 <div>
+                  {editMode ? (
+                    <>
+                      {renderEditable("card3Title", { as: "h2", className: "mb-2 text-sm font-semibold text-[var(--color-foreground)]" })}
+                      {renderEditable("card3Body", { as: "p", className: "text-xs leading-snug text-[var(--color-muted)]", multiline: true })}
+                    </>
+                  ) : (
+                    <>
                   <h2 className="mb-2 text-sm font-semibold text-[var(--color-foreground)]">{c("card3Title")}</h2>
                   <p className="text-xs leading-snug text-[var(--color-muted)]">
                     {c("card3Body")}
                   </p>
+                    </>
+                  )}
                 </div>
                 <button
                   type="button"
                   className="mt-6 rounded bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-[var(--color-primary-foreground)] hover:opacity-90"
                 >
-                  {c("generateButton")}
+                  {editMode ? displayContent.generateButton ?? "[generateButton]" : c("generateButton")}
                 </button>
               </div>
             </section>
           )}
 
-          {/* Global social insights */}
+            </>
+
+          {/* Global social insights - all text editable in edit mode */}
           {features.globalInsights !== false && (
             <section className="mb-10">
-              <h2 className="mb-1 text-lg font-semibold text-[var(--color-foreground)]">Global social insights</h2>
-              <p className="mb-4 text-xs text-[var(--color-muted)]">{c("sectionGlobalSubtitle")}</p>
+              {editMode ? renderEditable("sectionGlobalTitle", { as: "h2", className: "mb-1 text-lg font-semibold text-[var(--color-foreground)]" }) : <h2 className="mb-1 text-lg font-semibold text-[var(--color-foreground)]">{c("sectionGlobalTitle")}</h2>}
+              {editMode ? renderEditable("sectionGlobalSubtitle", { as: "p", className: "mb-4 text-xs text-[var(--color-muted)]" }) : <p className="mb-4 text-xs text-[var(--color-muted)]">{c("sectionGlobalSubtitle")}</p>}
               <ul className="space-y-3">
                 {[
                   {
@@ -2582,6 +2755,21 @@ export function BasePrototype({ theme, brand, content, features, enableAIGenerat
                   },
                 ].map(({ tag, tagClass, titleKey, descriptionKey, sourceKey, defaultTitle, defaultDescription }) => (
                   <li key={tag}>
+                    {editMode ? (
+                      <div
+                        className="flex w-full gap-4 rounded-lg border border-[var(--color-border)] bg-white p-4 text-left"
+                      >
+                        <span
+                          className={`flex h-fit min-w-[5rem] flex-shrink-0 items-center justify-center rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider ${tagClass}`}
+                        >
+                          {tag}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          {renderEditable(titleKey, { as: "p", className: "text-xs font-medium text-[var(--color-foreground)]" })}
+                          {renderEditable(descriptionKey, { as: "p", className: "mt-1 text-xs text-[var(--color-muted)]", multiline: true })}
+                        </div>
+                      </div>
+                    ) : (
                     <button
                       type="button"
                       onClick={() => {
@@ -2604,23 +2792,39 @@ export function BasePrototype({ theme, brand, content, features, enableAIGenerat
                         </p>
                       </div>
                     </button>
+                    )}
                   </li>
                 ))}
               </ul>
             </section>
           )}
 
-          {/* Cross category insights */}
+          {/* Cross category insights - all text editable in edit mode */}
           {features.crossInsights !== false && (
             <section className="mb-10">
-              <h2 className="mb-1 text-lg font-semibold text-[var(--color-foreground)]">Cross category insights</h2>
-              <p className="mb-4 text-xs text-[var(--color-muted)]">{c("sectionCrossSubtitle")}</p>
+              {editMode ? renderEditable("sectionCrossTitle", { as: "h2", className: "mb-1 text-lg font-semibold text-[var(--color-foreground)]" }) : <h2 className="mb-1 text-lg font-semibold text-[var(--color-foreground)]">{c("sectionCrossTitle")}</h2>}
+              {editMode ? renderEditable("sectionCrossSubtitle", { as: "p", className: "mb-4 text-xs text-[var(--color-muted)]" }) : <p className="mb-4 text-xs text-[var(--color-muted)]">{c("sectionCrossSubtitle")}</p>}
               <ul className="space-y-3">
                 {[
                   { tag: "Painpoint", tagClass: "bg-amber-50 text-amber-700 ring-1 ring-amber-200/60", titleKey: "sectionCrossInsight1Title", descKey: "sectionCrossInsight1Description" },
                   { tag: "Trend", tagClass: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200/60", titleKey: "sectionCrossInsight2Title", descKey: "sectionCrossInsight2Description" },
                 ].map(({ tag, tagClass, titleKey, descKey }, i) => (
                   <li key={i}>
+                    {editMode ? (
+                      <div
+                        className="flex w-full gap-4 rounded-lg border border-[var(--color-border)] bg-white p-4 text-left"
+                      >
+                        <span
+                          className={`flex h-fit min-w-[5rem] flex-shrink-0 items-center justify-center rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider ${tagClass}`}
+                        >
+                          {tag}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          {renderEditable(titleKey, { as: "p", className: "text-xs font-medium text-[var(--color-foreground)]" })}
+                          {renderEditable(descKey, { as: "p", className: "mt-1 text-xs text-[var(--color-muted)]", multiline: true })}
+                        </div>
+                      </div>
+                    ) : (
                     <button
                       type="button"
                       onClick={() => {
@@ -2644,11 +2848,14 @@ export function BasePrototype({ theme, brand, content, features, enableAIGenerat
                         <p className="mt-1 text-xs text-[var(--color-muted)]">{c(descKey)}</p>
                       </div>
                     </button>
+                    )}
                   </li>
                 ))}
               </ul>
             </section>
           )}
+
+            </div>
 
           {/* Social Insight modal */}
           {socialInsightModalOpen && (
@@ -2750,11 +2957,20 @@ export function BasePrototype({ theme, brand, content, features, enableAIGenerat
 
           {/* Dynamic Personas */}
           {features.personas !== false && (
-            <section className="mb-10">
+            <section className={`mb-10 ${editMode ? "pointer-events-none" : ""}`}>
               <div className="mb-4 flex items-center justify-between">
                 <div>
+                  {editMode ? (
+                    <>
+                      {renderEditable("sectionPersonasTitle", { as: "h2", className: "text-lg font-semibold text-[var(--color-foreground)]" })}
+                      {renderEditable("sectionPersonasSubtitle", { as: "p", className: "text-xs text-[var(--color-muted)]" })}
+                    </>
+                  ) : (
+                    <>
                   <h2 className="text-lg font-semibold text-[var(--color-foreground)]">{c("sectionPersonasTitle")}</h2>
                   <p className="text-xs text-[var(--color-muted)]">{c("sectionPersonasSubtitle")}</p>
+                    </>
+                  )}
                 </div>
                 <div className="relative" ref={locationDropdownRef}>
                   <button
@@ -2797,16 +3013,30 @@ export function BasePrototype({ theme, brand, content, features, enableAIGenerat
                   "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=128&h=128&fit=crop",
                   "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=128&h=128&fit=crop",
                 ].map((placeholderImg, i) => {
-                  const label = c(`persona${i + 1}Label`);
+                  const labelKey = `persona${i + 1}Label`;
+                  const label = editMode ? (editContent[labelKey] ?? "") : c(labelKey);
                   const img = (content[`persona${i + 1}Image`] as string | undefined) ?? placeholderImg;
                   const isClickable = i < 2;
                   return (
+                  editMode ? (
+                    <div
+                      key={i}
+                      className="flex min-w-0 flex-col items-center rounded-lg border border-[var(--color-border)] bg-white p-4 shadow-sm"
+                    >
+                      <img
+                        src={img}
+                        alt=""
+                        className="mb-2 h-16 w-16 rounded-full object-cover"
+                      />
+                      {renderEditable(labelKey, { as: "p", className: "text-center text-xs font-medium text-[var(--color-foreground)] w-full" })}
+                    </div>
+                  ) : (
                   <button
                     key={i}
                     type="button"
                     onClick={() => {
                       if (!isClickable) return;
-                      setSelectedPersona({ label, img, index: i === 0 ? 0 : 1 });
+                      setSelectedPersona({ label: String(label), img, index: i === 0 ? 0 : 1 });
                       setPersonaModalOpen(true);
                     }}
                     className="flex min-w-0 flex-col items-center rounded-lg border border-[var(--color-border)] bg-white p-4 shadow-sm transition hover:border-[var(--color-primary)] hover:shadow-md"
@@ -2818,6 +3048,7 @@ export function BasePrototype({ theme, brand, content, features, enableAIGenerat
                     />
                     <p className="text-center text-xs font-medium text-[var(--color-foreground)]">{label}</p>
                   </button>
+                  )
                 );})}
               </div>
             </section>

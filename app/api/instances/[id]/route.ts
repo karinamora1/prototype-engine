@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getInstance, deleteInstance, updateInstance } from "@/lib/instance-store";
+import { getInstance, deleteInstance, updateInstance, duplicateInstance, updateIndexEntry } from "@/lib/instance-store";
 
 /**
  * GET /api/instances/[id]
@@ -26,8 +26,9 @@ export async function GET(
 
 /**
  * PATCH /api/instances/[id]
- * Body: { theme?: { colors?: Partial<BrandTheme["colors"]> } }
- * Updates instance theme colors and returns the full instance (without password hash).
+ * Body: { theme?: { colors?: Partial<BrandTheme["colors"]> }, content?: Partial<ContentMap> }
+ * Updates this instance only (theme and/or content). Does not modify the base prototype or default config.
+ * Returns the full instance (without password hash).
  */
 export async function PATCH(
   request: NextRequest,
@@ -41,13 +42,19 @@ export async function PATCH(
     }
     const body = await request.json().catch(() => ({}));
     const themeUpdates = body.theme;
-    if (!themeUpdates || typeof themeUpdates !== "object") {
-      return NextResponse.json({ error: "theme object required" }, { status: 400 });
+    const contentUpdates = body.content;
+    const hasTheme = themeUpdates && typeof themeUpdates === "object";
+    const hasContent = contentUpdates != null && typeof contentUpdates === "object";
+    if (!hasTheme && !hasContent) {
+      return NextResponse.json({ error: "theme or content object required" }, { status: 400 });
     }
     const updated = await updateInstance(id, {
-      theme: {
-        colors: themeUpdates.colors && typeof themeUpdates.colors === "object" ? themeUpdates.colors : undefined,
-      },
+      theme: hasTheme
+        ? {
+            colors: themeUpdates.colors && typeof themeUpdates.colors === "object" ? themeUpdates.colors : undefined,
+          }
+        : undefined,
+      content: hasContent ? contentUpdates : undefined,
     });
     if (!updated) {
       return NextResponse.json({ error: "Instance not found" }, { status: 404 });
@@ -78,5 +85,37 @@ export async function DELETE(
   } catch (e) {
     console.error("Delete instance error:", e);
     return NextResponse.json({ error: "Failed to delete instance" }, { status: 500 });
+  }
+}
+
+/**
+ * POST /api/instances/[id]/publish
+ * Body: { name: string, password?: string }
+ * Creates a copy of this instance with the given page name and optional password.
+ * Returns the new instance (with slug) for the published URL /p/[slug].
+ */
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+    const body = await request.json().catch(() => ({}));
+    const name = typeof body.name === "string" ? body.name.trim() : "";
+    if (!name) {
+      return NextResponse.json({ error: "name is required" }, { status: 400 });
+    }
+    const password = typeof body.password === "string" ? body.password : undefined;
+    const published = await duplicateInstance(id, { name, password });
+    if (!published) {
+      return NextResponse.json({ error: "Instance not found" }, { status: 404 });
+    }
+    await updateInstance(id, { publishedSlug: published.slug });
+    await updateIndexEntry(id, { publishedSlug: published.slug });
+    const { passwordHash, ...safe } = published;
+    return NextResponse.json({ ...safe, passwordProtected: !!passwordHash });
+  } catch (e) {
+    console.error("Publish instance error:", e);
+    return NextResponse.json({ error: "Failed to publish" }, { status: 500 });
   }
 }

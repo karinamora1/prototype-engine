@@ -19,6 +19,15 @@ export default function InstancePage({ params }: { params: { id: string } | Prom
   const [editingTokenKey, setEditingTokenKey] = useState<string | null>(null);
   const [editingTokenValue, setEditingTokenValue] = useState("");
   const [saveTokenLoading, setSaveTokenLoading] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [isDashboardView, setIsDashboardView] = useState(true);
+  const [publishPopupOpen, setPublishPopupOpen] = useState(false);
+  const [publishName, setPublishName] = useState("");
+  const [publishPasswordProtect, setPublishPasswordProtect] = useState(false);
+  const [publishPassword, setPublishPassword] = useState("");
+  const [publishLoading, setPublishLoading] = useState(false);
+  const [publishedSlug, setPublishedSlug] = useState<string | null>(null);
+  const [publishError, setPublishError] = useState("");
 
   useEffect(() => {
     if (params instanceof Promise) {
@@ -140,6 +149,18 @@ export default function InstancePage({ params }: { params: { id: string } | Prom
             >
               Back to instance library
             </Link>
+            {isDashboardView && (
+            <button
+              type="button"
+              onClick={() => {
+                setLibraryPopupOpen(false);
+                setEditMode(true);
+              }}
+              className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-center text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              Edit mode
+            </button>
+            )}
             <button
               type="button"
               onClick={() => {
@@ -150,6 +171,177 @@ export default function InstancePage({ params }: { params: { id: string } | Prom
             >
               Refine UI
             </button>
+            <button
+              type="button"
+              onClick={() => {
+                setLibraryPopupOpen(false);
+                setPublishPopupOpen(true);
+                setPublishName("");
+                setPublishPasswordProtect(false);
+                setPublishPassword("");
+                setPublishedSlug(null);
+                setPublishError("");
+              }}
+              className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              Publish
+            </button>
+          </div>
+        </>
+      )}
+      {publishPopupOpen && (
+        <>
+          <button
+            type="button"
+            aria-label="Close"
+            className="fixed inset-0 z-20 bg-black/30 backdrop-blur-[2px]"
+            onClick={() => {
+              setPublishPopupOpen(false);
+              setPublishedSlug(null);
+            }}
+          />
+          <div className="fixed left-1/2 top-1/2 z-30 w-[min(24rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-slate-200 bg-white p-6 shadow-xl">
+            <h2 className="mb-4 text-lg font-semibold text-slate-900">Publish page</h2>
+            <p className="mb-4 text-sm text-slate-600">
+              Push your instance to production with it's own URL.
+            </p>
+            {publishedSlug ? (
+              <div className="space-y-3">
+                <p className="text-sm font-medium text-slate-700">Published!</p>
+                <p className="text-sm text-slate-600">
+                  Your page is available at:
+                </p>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    readOnly
+                    value={typeof window !== "undefined" ? `${window.location.origin}/p/${publishedSlug}` : `/p/${publishedSlug}`}
+                    className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const url = typeof window !== "undefined" ? `${window.location.origin}/p/${publishedSlug}` : "";
+                      if (url && navigator.clipboard) navigator.clipboard.writeText(url);
+                    }}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  >
+                    Copy link
+                  </button>
+                </div>
+                <div className="flex gap-2 pt-2">
+                  <a
+                    href={`/p/${publishedSlug}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex-1 rounded-lg bg-[var(--color-primary)] py-2 text-center text-sm font-medium text-[var(--color-primary-foreground)] hover:opacity-90"
+                  >
+                    Open published page
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => setPublishPopupOpen(false)}
+                    className="rounded-lg border border-slate-200 py-2 px-4 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  if (!id || !publishName.trim()) return;
+                  if (publishPasswordProtect && !publishPassword.trim()) {
+                    setPublishError("Please set a password or disable password protection.");
+                    return;
+                  }
+                  setPublishError("");
+                  setPublishLoading(true);
+                  try {
+                    const res = await fetch(`/api/instances/${id}`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        name: publishName.trim(),
+                        password: publishPasswordProtect ? publishPassword : undefined,
+                      }),
+                    });
+                    const data = await res.json();
+                    if (!res.ok) {
+                      setPublishError(data.error || "Failed to publish");
+                      return;
+                    }
+                    setPublishedSlug(data.slug);
+                  } finally {
+                    setPublishLoading(false);
+                  }
+                }}
+                className="space-y-4"
+              >
+                <div>
+                  <label htmlFor="publish-name" className="mb-1 block text-sm font-medium text-slate-700">
+                    Enter URL to share with client:
+                  </label>
+                  <div className="flex items-center rounded-lg border border-slate-300 bg-white focus-within:ring-1 focus-within:ring-slate-500 focus-within:border-slate-500">
+                    <span className="pl-3 text-sm text-slate-500">boi-demo.com/</span>
+                    <input
+                      id="publish-name"
+                      type="text"
+                      value={publishName}
+                      onChange={(e) => setPublishName(e.target.value)}
+                      placeholder="page-name"
+                      className="min-w-0 flex-1 border-0 py-2 pr-3 text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-0"
+                      required
+                    />
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    id="publish-password-protect"
+                    type="checkbox"
+                    checked={publishPasswordProtect}
+                    onChange={(e) => setPublishPasswordProtect(e.target.checked)}
+                    className="h-4 w-4 rounded border-slate-300"
+                  />
+                  <label htmlFor="publish-password-protect" className="text-sm font-medium text-slate-700">
+                    Password protect this page
+                  </label>
+                </div>
+                {publishPasswordProtect && (
+                  <div>
+                    <label htmlFor="publish-password" className="mb-1 block text-sm font-medium text-slate-700">
+                      Password
+                    </label>
+                    <input
+                      id="publish-password"
+                      type="password"
+                      value={publishPassword}
+                      onChange={(e) => setPublishPassword(e.target.value)}
+                      placeholder="Set a password"
+                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-800 placeholder:text-slate-400 focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                    />
+                  </div>
+                )}
+                {publishError && <p className="text-sm text-red-600">{publishError}</p>}
+                <div className="flex gap-2 pt-2">
+                  <button
+                    type="submit"
+                    disabled={publishLoading || !publishName.trim()}
+                    className="flex-1 rounded-lg bg-[var(--color-primary)] py-2 text-sm font-medium text-[var(--color-primary-foreground)] hover:opacity-90 disabled:opacity-50"
+                  >
+                    {publishLoading ? "Publishing…" : "Publish"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPublishPopupOpen(false)}
+                    className="rounded-lg border border-slate-200 py-2 px-4 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </>
       )}
@@ -370,6 +562,20 @@ export default function InstancePage({ params }: { params: { id: string } | Prom
         features={instance.features}
         briefSummary={instance.briefSummary}
         firstRecentProjectDetail={instance.firstRecentProjectDetail}
+        editMode={editMode}
+        onFlowViewChange={(flowView) => setIsDashboardView(flowView === "dashboard")}
+        onSaveContent={async (content) => {
+          if (!id) return;
+          const res = await fetch(`/api/instances/${id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ content }),
+          });
+          if (!res.ok) return;
+          const data = await res.json();
+          setInstance(data as PrototypeInstanceView);
+          setEditMode(false);
+        }}
       />
     </div>
   );
