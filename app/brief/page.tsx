@@ -20,7 +20,6 @@ export default function BriefPage() {
   const [wordmarkImageDataUrl, setWordmarkImageDataUrl] = useState<string | null>(null);
   const wordmarkFileInputRef = useRef<HTMLInputElement>(null);
   const [brief, setBrief] = useState("");
-  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [generatedId, setGeneratedId] = useState<string | null>(null);
@@ -110,7 +109,6 @@ export default function BriefPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           brief: brief.trim(),
-          password: password || undefined,
           clientName: clientName.trim() || undefined,
           childrenBrands: childrenBrands.trim() || undefined,
           uiScheme: visualsThemeMode === "text" ? (uiScheme.trim() || undefined) : undefined,
@@ -236,19 +234,6 @@ export default function BriefPage() {
               placeholder="Focus on innovations and potential opportunities in the aircare space"
               value={brief}
               onChange={(e) => setBrief(e.target.value)}
-            />
-          </div>
-          <div>
-            <label htmlFor="password" className="mb-1 block text-sm font-medium text-slate-300">
-              Password (optional)
-            </label>
-            <input
-              id="password"
-              type="password"
-              className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-white placeholder:text-slate-500 focus:border-cyan-500/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/30"
-              placeholder="Protect this instance"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
             />
           </div>
         </section>
