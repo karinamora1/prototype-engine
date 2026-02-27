@@ -1,23 +1,10 @@
 /**
- * File-based store for prototype instances.
- * In production you could swap this for a database.
+ * Supabase-based store for prototype instances.
  */
 
-import { promises as fs } from "fs";
-import path from "path";
 import { nanoid } from "nanoid";
+import { supabase } from "./supabase";
 import type { PrototypeInstance, CreateInstanceInput, ContentMap } from "./types";
-
-function getBaseDataDir(): string {
-  if (process.env.BOI_DATA_DIR) return process.env.BOI_DATA_DIR;
-  // Vercel (and most serverless runtimes) only allow writes to /tmp at runtime.
-  if (process.env.VERCEL) return path.join("/tmp", "boi-prototype-engine-data");
-  return path.join(process.cwd(), "data");
-}
-
-const BASE_DATA_DIR = getBaseDataDir();
-const DATA_DIR = path.join(BASE_DATA_DIR, "instances");
-const INDEX_FILE = path.join(BASE_DATA_DIR, "index.json");
 
 export type IndexEntry = {
   id: string;
@@ -47,44 +34,13 @@ function simpleHash(password: string): string {
   return "h_" + Math.abs(h).toString(16);
 }
 
-export async function ensureDataDir(): Promise<void> {
-  await fs.mkdir(DATA_DIR, { recursive: true });
-  try {
-    await fs.access(path.dirname(INDEX_FILE));
-  } catch {
-    await fs.mkdir(path.dirname(INDEX_FILE), { recursive: true });
-  }
-}
-
-async function readIndex(): Promise<IndexEntry[]> {
-  await ensureDataDir();
-  try {
-    const raw = await fs.readFile(INDEX_FILE, "utf-8");
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.map((e: Record<string, unknown>) => ({
-      id: String(e.id ?? ""),
-      name: String(e.name ?? ""),
-      slug: String(e.slug ?? ""),
-      createdAt: String(e.createdAt ?? ""),
-      sourceInstanceId: e.sourceInstanceId != null ? String(e.sourceInstanceId) : undefined,
-      publishedSlug: e.publishedSlug != null ? String(e.publishedSlug) : undefined,
-    })) : [];
-  } catch {
-    return [];
-  }
-}
-
-async function writeIndex(entries: IndexEntry[]): Promise<void> {
-  await ensureDataDir();
-  await fs.writeFile(INDEX_FILE, JSON.stringify(entries, null, 2), "utf-8");
-}
 
 export async function createInstance(input: CreateInstanceInput): Promise<PrototypeInstance> {
-  await ensureDataDir();
   const id = nanoid(10);
   const slug = input.slug ?? slugify(input.name);
   const now = new Date().toISOString();
   const trimmedPassword = input.password?.trim();
+  
   const instance: PrototypeInstance = {
     id,
     name: input.name,
@@ -100,17 +56,28 @@ export async function createInstance(input: CreateInstanceInput): Promise<Protot
     firstRecentProjectDetail: input.firstRecentProjectDetail ?? undefined,
     sourceInstanceId: input.sourceInstanceId,
   };
-  const filePath = path.join(DATA_DIR, `${id}.json`);
-  await fs.writeFile(filePath, JSON.stringify(instance, null, 2), "utf-8");
-  const index = await readIndex();
-  index.push({
+
+  const { error } = await supabase.from("instances").insert({
     id,
     name: input.name,
     slug,
-    createdAt: now,
-    sourceInstanceId: input.sourceInstanceId,
+    password_hash: instance.passwordHash,
+    brief_summary: input.briefSummary,
+    source_instance_id: input.sourceInstanceId,
+    published_slug: null,
+    data: {
+      theme: input.theme,
+      brand: input.brand,
+      content: input.content,
+      features: input.features,
+      firstRecentProjectDetail: input.firstRecentProjectDetail,
+    },
   });
-  await writeIndex(index);
+
+  if (error) {
+    throw new Error(`Failed to create instance: ${error.message}`);
+  }
+
   return instance;
 }
 
@@ -139,51 +106,104 @@ export async function duplicateInstance(
 }
 
 export async function getInstance(id: string): Promise<PrototypeInstance | null> {
-  const filePath = path.join(DATA_DIR, `${id}.json`);
-  try {
-    const raw = await fs.readFile(filePath, "utf-8");
-    return JSON.parse(raw) as PrototypeInstance;
-  } catch {
-    return null;
-  }
+  const { data, error } = await supabase
+    .from("instances")
+    .select("*")
+    .eq("id", id)
+    .single();
+
+  if (error || !data) return null;
+
+  return {
+    id: data.id,
+    name: data.name,
+    slug: data.slug,
+    createdAt: data.created_at,
+    updatedAt: data.updated_at,
+    passwordHash: data.password_hash,
+    briefSummary: data.brief_summary,
+    sourceInstanceId: data.source_instance_id,
+    publishedSlug: data.published_slug,
+    theme: data.data.theme,
+    brand: data.data.brand,
+    content: data.data.content,
+    features: data.data.features,
+    firstRecentProjectDetail: data.data.firstRecentProjectDetail,
+  };
 }
 
 export async function getInstanceBySlug(slug: string): Promise<PrototypeInstance | null> {
-  const index = await readIndex();
-  const entry = index.find((e) => e.slug === slug);
-  if (!entry) return null;
-  return getInstance(entry.id);
+  const { data, error } = await supabase
+    .from("instances")
+    .select("*")
+    .eq("slug", slug)
+    .single();
+
+  if (error || !data) return null;
+
+  return {
+    id: data.id,
+    name: data.name,
+    slug: data.slug,
+    createdAt: data.created_at,
+    updatedAt: data.updated_at,
+    passwordHash: data.password_hash,
+    briefSummary: data.brief_summary,
+    sourceInstanceId: data.source_instance_id,
+    publishedSlug: data.published_slug,
+    theme: data.data.theme,
+    brand: data.data.brand,
+    content: data.data.content,
+    features: data.data.features,
+    firstRecentProjectDetail: data.data.firstRecentProjectDetail,
+  };
 }
 
 export async function listInstances(): Promise<IndexEntry[]> {
-  const index = await readIndex();
-  const filtered = index.filter((e) => !e.sourceInstanceId);
-  const sorted = filtered.sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1));
-  // Populate hasPassword by loading each instance
-  const enriched = await Promise.all(
-    sorted.map(async (entry) => {
-      const instance = await getInstance(entry.id);
-      return { ...entry, hasPassword: instance?.passwordHash ? true : false };
-    })
-  );
-  return enriched;
+  const { data, error } = await supabase
+    .from("instances")
+    .select("id, name, slug, created_at, source_instance_id, published_slug, password_hash")
+    .is("source_instance_id", null)
+    .order("created_at", { ascending: false });
+
+  if (error || !data) return [];
+
+  return data.map((row) => ({
+    id: row.id,
+    name: row.name,
+    slug: row.slug,
+    createdAt: row.created_at,
+    sourceInstanceId: row.source_instance_id,
+    publishedSlug: row.published_slug,
+    hasPassword: !!row.password_hash,
+  }));
 }
 
 export async function searchInstances(query: string): Promise<IndexEntry[]> {
-  const index = await readIndex();
-  const filtered = index.filter((e) => !e.sourceInstanceId);
   const q = query.toLowerCase().trim();
-  const matched = !q
-    ? filtered.sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1))
-    : filtered.filter((e) => e.name.toLowerCase().includes(q) || e.slug.includes(q));
-  // Populate hasPassword by loading each instance
-  const enriched = await Promise.all(
-    matched.map(async (entry) => {
-      const instance = await getInstance(entry.id);
-      return { ...entry, hasPassword: instance?.passwordHash ? true : false };
-    })
-  );
-  return enriched;
+
+  if (!q) {
+    return listInstances();
+  }
+
+  const { data, error } = await supabase
+    .from("instances")
+    .select("id, name, slug, created_at, source_instance_id, published_slug, password_hash")
+    .is("source_instance_id", null)
+    .or(`name.ilike.%${q}%,slug.ilike.%${q}%`)
+    .order("created_at", { ascending: false });
+
+  if (error || !data) return [];
+
+  return data.map((row) => ({
+    id: row.id,
+    name: row.name,
+    slug: row.slug,
+    createdAt: row.created_at,
+    sourceInstanceId: row.source_instance_id,
+    publishedSlug: row.published_slug,
+    hasPassword: !!row.password_hash,
+  }));
 }
 
 /** Update an index entry (e.g. set publishedSlug on the source after publishing). */
@@ -191,12 +211,17 @@ export async function updateIndexEntry(
   id: string,
   updates: { publishedSlug?: string }
 ): Promise<boolean> {
-  const index = await readIndex();
-  const entry = index.find((e) => e.id === id);
-  if (!entry) return false;
-  if (updates.publishedSlug !== undefined) entry.publishedSlug = updates.publishedSlug;
-  await writeIndex(index);
-  return true;
+  const updateData: Record<string, unknown> = {};
+  if (updates.publishedSlug !== undefined) {
+    updateData.published_slug = updates.publishedSlug;
+  }
+
+  const { error } = await supabase
+    .from("instances")
+    .update(updateData)
+    .eq("id", id);
+
+  return !error;
 }
 
 export function verifyPassword(instance: PrototypeInstance, password: string): boolean {
@@ -209,31 +234,25 @@ export function verifyPassword(instance: PrototypeInstance, password: string): b
  * Remove password protection from an instance.
  */
 export async function removePassword(id: string): Promise<PrototypeInstance | null> {
-  const instance = await getInstance(id);
-  if (!instance) return null;
-  instance.passwordHash = null;
-  instance.updatedAt = new Date().toISOString();
-  const filePath = path.join(DATA_DIR, `${id}.json`);
-  await fs.writeFile(filePath, JSON.stringify(instance, null, 2), "utf-8");
-  return instance;
+  const { error } = await supabase
+    .from("instances")
+    .update({ password_hash: null })
+    .eq("id", id);
+
+  if (error) return null;
+  return getInstance(id);
 }
 
 /**
- * Delete an instance and all its data: remove from index and delete the instance JSON file.
+ * Delete an instance and all its data.
  */
 export async function deleteInstance(id: string): Promise<boolean> {
-  const filePath = path.join(DATA_DIR, `${id}.json`);
-  const index = await readIndex();
-  const idx = index.findIndex((e) => e.id === id);
-  if (idx === -1) return false;
-  index.splice(idx, 1);
-  await writeIndex(index);
-  try {
-    await fs.unlink(filePath);
-  } catch {
-    // File might already be missing; index is updated
-  }
-  return true;
+  const { error } = await supabase
+    .from("instances")
+    .delete()
+    .eq("id", id);
+
+  return !error;
 }
 
 /**
@@ -250,7 +269,8 @@ export async function updateInstance(
 ): Promise<PrototypeInstance | null> {
   const instance = await getInstance(id);
   if (!instance) return null;
-  const now = new Date().toISOString();
+
+  // Merge theme updates
   if (updates.theme) {
     if (updates.theme.colors) {
       instance.theme = {
@@ -265,6 +285,8 @@ export async function updateInstance(
       };
     }
   }
+
+  // Merge content updates
   if (updates.content != null && typeof updates.content === "object") {
     const merged: ContentMap = { ...instance.content };
     for (const [k, v] of Object.entries(updates.content)) {
@@ -272,11 +294,27 @@ export async function updateInstance(
     }
     instance.content = merged;
   }
+
+  // Prepare update data
+  const updateData: Record<string, unknown> = {
+    data: {
+      theme: instance.theme,
+      brand: instance.brand,
+      content: instance.content,
+      features: instance.features,
+      firstRecentProjectDetail: instance.firstRecentProjectDetail,
+    },
+  };
+
   if (updates.publishedSlug !== undefined) {
-    instance.publishedSlug = updates.publishedSlug;
+    updateData.published_slug = updates.publishedSlug;
   }
-  instance.updatedAt = now;
-  const filePath = path.join(DATA_DIR, `${id}.json`);
-  await fs.writeFile(filePath, JSON.stringify(instance, null, 2), "utf-8");
-  return instance;
+
+  const { error } = await supabase
+    .from("instances")
+    .update(updateData)
+    .eq("id", id);
+
+  if (error) return null;
+  return getInstance(id);
 }
