@@ -26,6 +26,7 @@ export type IndexEntry = {
   createdAt: string;
   sourceInstanceId?: string;
   publishedSlug?: string;
+  hasPassword?: boolean;
 };
 
 function slugify(name: string): string {
@@ -156,15 +157,32 @@ export async function getInstanceBySlug(slug: string): Promise<PrototypeInstance
 export async function listInstances(): Promise<IndexEntry[]> {
   const index = await readIndex();
   const filtered = index.filter((e) => !e.sourceInstanceId);
-  return filtered.sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1));
+  const sorted = filtered.sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1));
+  // Populate hasPassword by loading each instance
+  const enriched = await Promise.all(
+    sorted.map(async (entry) => {
+      const instance = await getInstance(entry.id);
+      return { ...entry, hasPassword: instance?.passwordHash ? true : false };
+    })
+  );
+  return enriched;
 }
 
 export async function searchInstances(query: string): Promise<IndexEntry[]> {
   const index = await readIndex();
   const filtered = index.filter((e) => !e.sourceInstanceId);
   const q = query.toLowerCase().trim();
-  if (!q) return filtered.sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1));
-  return filtered.filter((e) => e.name.toLowerCase().includes(q) || e.slug.includes(q));
+  const matched = !q
+    ? filtered.sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1))
+    : filtered.filter((e) => e.name.toLowerCase().includes(q) || e.slug.includes(q));
+  // Populate hasPassword by loading each instance
+  const enriched = await Promise.all(
+    matched.map(async (entry) => {
+      const instance = await getInstance(entry.id);
+      return { ...entry, hasPassword: instance?.passwordHash ? true : false };
+    })
+  );
+  return enriched;
 }
 
 /** Update an index entry (e.g. set publishedSlug on the source after publishing). */
@@ -183,6 +201,19 @@ export async function updateIndexEntry(
 export function verifyPassword(instance: PrototypeInstance, password: string): boolean {
   if (!instance.passwordHash) return true;
   return instance.passwordHash === simpleHash(password);
+}
+
+/**
+ * Remove password protection from an instance.
+ */
+export async function removePassword(id: string): Promise<PrototypeInstance | null> {
+  const instance = await getInstance(id);
+  if (!instance) return null;
+  instance.passwordHash = null;
+  instance.updatedAt = new Date().toISOString();
+  const filePath = path.join(DATA_DIR, `${id}.json`);
+  await fs.writeFile(filePath, JSON.stringify(instance, null, 2), "utf-8");
+  return instance;
 }
 
 /**

@@ -3,11 +3,11 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Trash2 } from "lucide-react";
+import { Trash2, Lock, Unlock } from "lucide-react";
 
 const UNLOCK_KEY = "boi_prototype_unlocked";
 
-type InstanceMeta = { id: string; name: string; slug: string; createdAt: string; publishedSlug?: string };
+type InstanceMeta = { id: string; name: string; slug: string; createdAt: string; publishedSlug?: string; hasPassword?: boolean };
 
 export default function LibraryPage() {
   const router = useRouter();
@@ -17,6 +17,7 @@ export default function LibraryPage() {
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteConfirmItem, setDeleteConfirmItem] = useState<InstanceMeta | null>(null);
+  const [removingPasswordId, setRemovingPasswordId] = useState<string | null>(null);
 
   function loadList() {
     setLoading(true);
@@ -63,6 +64,26 @@ export default function LibraryPage() {
       .finally(() => setDeletingId(null));
   }
 
+  function handleRemovePassword(e: React.MouseEvent, item: InstanceMeta) {
+    e.preventDefault();
+    e.stopPropagation();
+    setRemovingPasswordId(item.id);
+    fetch(`/api/instances/${item.id}/password`, { method: "DELETE" })
+      .then((r) => {
+        if (r.ok) {
+          setList((prev) =>
+            prev.map((i) => (i.id === item.id ? { ...i, hasPassword: false } : i))
+          );
+        } else {
+          return r.json().then((data) => Promise.reject(data?.error ?? "Failed to remove password"));
+        }
+      })
+      .catch(() => {
+        loadList();
+      })
+      .finally(() => setRemovingPasswordId(null));
+  }
+
   if (unlocked === null) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50">
@@ -97,7 +118,10 @@ export default function LibraryPage() {
                 href={`/instance/${item.id}`}
                 className="flex-1 rounded-lg border border-slate-200 bg-white px-4 py-2 shadow-sm transition hover:border-slate-300 hover:shadow"
               >
-                <span className="font-medium text-slate-800">{item.name}</span>
+                <span className="flex items-center gap-2">
+                  <span className="font-medium text-slate-800">{item.name}</span>
+                  {item.hasPassword && <Lock className="h-3.5 w-3.5 text-slate-400" />}
+                </span>
                 <span className="ml-2 text-sm text-slate-500">{new Date(item.createdAt).toLocaleDateString()}</span>
               </Link>
               {item.publishedSlug && (
@@ -110,6 +134,18 @@ export default function LibraryPage() {
                 >
                   View Production
                 </a>
+              )}
+              {item.hasPassword && (
+                <button
+                  type="button"
+                  onClick={(e) => handleRemovePassword(e, item)}
+                  disabled={removingPasswordId === item.id}
+                  title="Remove password"
+                  className="flex-shrink-0 rounded-lg border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-amber-200 hover:bg-amber-50 hover:text-amber-600 disabled:opacity-50"
+                  aria-label={`Remove password from ${item.name}`}
+                >
+                  <Unlock className="h-4 w-4" />
+                </button>
               )}
               <button
                 type="button"
