@@ -22,7 +22,7 @@ export default function LibraryPage() {
   function loadList() {
     setLoading(true);
     const url = query.trim() ? `/api/instances?q=${encodeURIComponent(query)}` : "/api/instances";
-    fetch(url)
+    fetch(url, { cache: "no-store" })
       .then((r) => r.json())
       .then((data) => {
         setList(Array.isArray(data) ? data : []);
