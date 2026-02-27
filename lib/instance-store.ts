@@ -225,7 +225,11 @@ export async function updateInstance(
     }
   }
   if (updates.content != null && typeof updates.content === "object") {
-    instance.content = { ...instance.content, ...updates.content };
+    const merged: ContentMap = { ...instance.content };
+    for (const [k, v] of Object.entries(updates.content)) {
+      if (typeof v === "string") merged[k] = v;
+    }
+    instance.content = merged;
   }
   if (updates.publishedSlug !== undefined) {
     instance.publishedSlug = updates.publishedSlug;
