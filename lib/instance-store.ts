@@ -8,8 +8,16 @@ import path from "path";
 import { nanoid } from "nanoid";
 import type { PrototypeInstance, CreateInstanceInput, ContentMap } from "./types";
 
-const DATA_DIR = path.join(process.cwd(), "data", "instances");
-const INDEX_FILE = path.join(process.cwd(), "data", "index.json");
+function getBaseDataDir(): string {
+  if (process.env.BOI_DATA_DIR) return process.env.BOI_DATA_DIR;
+  // Vercel (and most serverless runtimes) only allow writes to /tmp at runtime.
+  if (process.env.VERCEL) return path.join("/tmp", "boi-prototype-engine-data");
+  return path.join(process.cwd(), "data");
+}
+
+const BASE_DATA_DIR = getBaseDataDir();
+const DATA_DIR = path.join(BASE_DATA_DIR, "instances");
+const INDEX_FILE = path.join(BASE_DATA_DIR, "index.json");
 
 export type IndexEntry = {
   id: string;
