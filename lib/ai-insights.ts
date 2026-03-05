@@ -72,7 +72,7 @@ export async function generateInsightsWithAI(
       { role: "system", content: SYSTEM_PROMPT },
       { role: "user", content: buildUserPrompt(input) },
     ],
-    max_tokens: 800,
+    max_tokens: 600,
     temperature: 0.4,
   };
 

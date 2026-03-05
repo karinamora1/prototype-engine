@@ -30,7 +30,7 @@ const DEFAULT_DASHBOARD_CONTENT: Record<string, string> = {
   navFeatureJournal: "Feature Journal",
   navGallery: "Gallery",
   navTemplates: "Templates",
-  selectorLabel: "Global",
+  selectorLabel: "All",
   brandOptions: "Brand A,Brand B",
   uploadDocument: "Upload Document",
   viewProjectLibrary: "View Project Library",

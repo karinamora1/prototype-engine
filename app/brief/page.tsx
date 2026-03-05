@@ -3,15 +3,25 @@
 import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react";
+import { Loader2, Plus, Trash2, ArrowRight } from "lucide-react";
 
 const UNLOCK_KEY = "boi_prototype_unlocked";
+
+export type ChildBrandEntry = { name: string; description: string };
+
+type CreateStep = "brand" | "loading" | "form";
 
 export default function BriefPage() {
   const router = useRouter();
   const [unlocked, setUnlocked] = useState<boolean | null>(null);
+  const [step, setStep] = useState<CreateStep>("brand");
+  const [brandName, setBrandName] = useState("");
+  const [brandWebsiteUrl, setBrandWebsiteUrl] = useState("");
+  const [researchError, setResearchError] = useState<string | null>(null);
+
   const [clientName, setClientName] = useState("");
-  const [childrenBrands, setChildrenBrands] = useState("");
+  const [childBrands, setChildBrands] = useState<ChildBrandEntry[]>([{ name: "", description: "" }]);
+  const [innovationFocus, setInnovationFocus] = useState("");
   const [uiScheme, setUiScheme] = useState("");
   const [themeImageDataUrl, setThemeImageDataUrl] = useState<string | null>(null);
   const themeFileInputRef = useRef<HTMLInputElement>(null);
@@ -19,7 +29,6 @@ export default function BriefPage() {
   const logoFileInputRef = useRef<HTMLInputElement>(null);
   const [wordmarkImageDataUrl, setWordmarkImageDataUrl] = useState<string | null>(null);
   const wordmarkFileInputRef = useRef<HTMLInputElement>(null);
-  const [brief, setBrief] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [generatedId, setGeneratedId] = useState<string | null>(null);
@@ -94,23 +103,71 @@ export default function BriefPage() {
     if (wordmarkFileInputRef.current) wordmarkFileInputRef.current.value = "";
   }
 
+  async function handleResearchBrand(e: React.FormEvent) {
+    e.preventDefault();
+    setResearchError(null);
+    if (!brandName.trim()) {
+      setResearchError("Please enter the brand name.");
+      return;
+    }
+    setStep("loading");
+    try {
+      const res = await fetch("/api/research-brand", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          brandName: brandName.trim(),
+          brandWebsiteUrl: brandWebsiteUrl.trim() || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Research failed");
+      setClientName(data.clientName ?? brandName.trim());
+      setChildBrands(
+        Array.isArray(data.childBrands) && data.childBrands.length > 0
+          ? data.childBrands.map((b: { name?: string; description?: string }) => ({
+              name: String(b.name ?? "").trim() || "Brand",
+              description: String(b.description ?? "").trim() || "",
+            }))
+          : [{ name: "", description: "" }]
+      );
+      setInnovationFocus(data.innovationFocus ?? "");
+      setStep("form");
+    } catch (err) {
+      setResearchError(err instanceof Error ? err.message : "Something went wrong");
+      setStep("brand");
+    }
+  }
+
   async function handleGenerate(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setGeneratedId(null);
-    if (!brief.trim()) {
-      setError("Please enter or paste a brief.");
+    const focus = innovationFocus.trim();
+    if (!focus) {
+      setError("Please enter what the innovation engine should focus on.");
       return;
     }
+    const childBrandsFiltered = childBrands.filter((b) => b.name.trim());
+    const contextBlock =
+      childBrandsFiltered.length > 0
+        ? childBrandsFiltered
+            .map((b) => `${b.name}: ${(b.description || "").trim() || "No description."}`)
+            .join("\n\n")
+        : "";
+    const fullBrief = contextBlock
+      ? `Sub-brands and context:\n\n${contextBlock}\n\nInnovation focus:\n${focus}`
+      : focus;
     setLoading(true);
     try {
+      const childBrandsFiltered = childBrands.filter((b) => b.name.trim());
       const res = await fetch("/api/instances/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          brief: brief.trim(),
+          brief: fullBrief,
           clientName: clientName.trim() || undefined,
-          childrenBrands: childrenBrands.trim() || undefined,
+          childBrands: childBrandsFiltered.length ? childBrandsFiltered.map((b) => ({ name: b.name.trim(), description: (b.description || "").trim() })) : undefined,
           uiScheme: visualsThemeMode === "text" ? (uiScheme.trim() || undefined) : undefined,
           themeImage: visualsThemeMode === "screenshot" ? themeImageDataUrl || undefined : undefined,
           logoImage: logoImageDataUrl || undefined,
@@ -120,6 +177,11 @@ export default function BriefPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Generate failed");
       setGeneratedId(data.id);
+      if (data.id && data.preGeneratedFlowData) {
+        try {
+          sessionStorage.setItem(`boi_instance_${data.id}`, JSON.stringify(data));
+        } catch (_) {}
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
@@ -191,9 +253,71 @@ export default function BriefPage() {
       </Link>
       <h1 className="mb-2 text-3xl font-bold text-white">Create Prototype Instance</h1>
       <p className="mb-8 text-slate-400">
-        Answer the following questions. The system will create a new branded instance of the innovation engine prototype with relevant copy and visual theme.
+        {step === "brand"
+          ? "Enter the brand name and website URL. An agent will research the brand and pre-fill the form."
+          : "Review and edit the pre-filled content, then add visuals and generate your instance."}
       </p>
+
+      {step === "brand" && (
+        <form onSubmit={handleResearchBrand} className="space-y-6">
+          <section className="space-y-4 rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur-sm">
+            <h2 className="text-lg font-semibold text-white">Brand</h2>
+            <div>
+              <label htmlFor="brandName" className="mb-1 block text-sm font-medium text-slate-300">
+                Brand name
+              </label>
+              <input
+                id="brandName"
+                type="text"
+                className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-white placeholder:text-slate-500 focus:border-cyan-500/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/30"
+                placeholder="e.g. SC Johnson"
+                value={brandName}
+                onChange={(e) => setBrandName(e.target.value)}
+              />
+            </div>
+            <div>
+              <label htmlFor="brandWebsiteUrl" className="mb-1 block text-sm font-medium text-slate-300">
+                Brand website URL (optional)
+              </label>
+              <input
+                id="brandWebsiteUrl"
+                type="url"
+                className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-white placeholder:text-slate-500 focus:border-cyan-500/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/30"
+                placeholder="https://www.brand.com (helps refine research)"
+                value={brandWebsiteUrl}
+                onChange={(e) => setBrandWebsiteUrl(e.target.value)}
+              />
+            </div>
+          </section>
+          {researchError && <p className="text-sm text-red-400">{researchError}</p>}
+          <button
+            type="submit"
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-500 px-4 py-3 font-medium text-white hover:bg-cyan-400 transition"
+          >
+            Research brand
+            <ArrowRight className="h-4 w-4" />
+          </button>
+        </form>
+      )}
+
+      {step === "loading" && (
+        <div className="flex flex-col items-center justify-center gap-4 rounded-2xl border border-white/10 bg-white/5 p-12 backdrop-blur-sm">
+          <Loader2 className="h-12 w-12 animate-spin text-cyan-400" aria-hidden />
+          <p className="text-sm font-medium text-slate-300">Researching brand and filling out the form…</p>
+        </div>
+      )}
+
+      {step === "form" && (
       <form onSubmit={handleGenerate} className="space-y-8">
+        <div className="mb-4 flex items-center justify-between">
+          <button
+            type="button"
+            onClick={() => setStep("brand")}
+            className="text-sm text-slate-400 hover:text-white transition"
+          >
+            ← Change brand / URL
+          </button>
+        </div>
         <section className="space-y-4 rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur-sm">
           <h2 className="text-lg font-semibold text-white">Content</h2>
           <div>
@@ -210,30 +334,70 @@ export default function BriefPage() {
             />
           </div>
           <div>
-            <label htmlFor="childrenBrands" className="mb-1 block text-sm font-medium text-slate-300">
+            <label className="mb-1 block text-sm font-medium text-slate-300">
               Children brands or Categories
             </label>
-            <input
-              id="childrenBrands"
-              type="text"
-              className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-white placeholder:text-slate-500 focus:border-cyan-500/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/30"
-              placeholder="e.g. Glade, Mr. Muscle, Raid"
-              value={childrenBrands}
-              onChange={(e) => setChildrenBrands(e.target.value)}
-            />
-            <p className="mt-0.5 text-xs text-slate-500">Separate each brand with a comma.</p>
+            <p className="mb-2 text-xs text-slate-500">Add each child brand and a description (space, voice, audience, products). Descriptions inform the concepts generated for that brand.</p>
+            <div className="space-y-3">
+              {childBrands.map((entry, index) => (
+                <div key={index} className="flex flex-col gap-2 rounded-xl border border-white/10 bg-white/5 p-3">
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      className="min-w-0 flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-white placeholder:text-slate-500 focus:border-cyan-500/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/30"
+                      placeholder="Brand name (e.g. Bazooka, Glade)"
+                      value={entry.name}
+                      onChange={(e) => {
+                        const next = [...childBrands];
+                        next[index] = { ...next[index], name: e.target.value };
+                        setChildBrands(next);
+                      }}
+                    />
+                    {childBrands.length > 1 ? (
+                      <button
+                        type="button"
+                        onClick={() => setChildBrands((prev) => prev.filter((_, i) => i !== index))}
+                        className="flex-shrink-0 rounded-lg border border-white/10 p-2 text-slate-400 hover:bg-white/10 hover:text-white transition"
+                        aria-label="Remove brand"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    ) : null}
+                  </div>
+                  <textarea
+                    rows={6}
+                    className="min-h-[8rem] w-full resize-y rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-white placeholder:text-slate-500 focus:border-cyan-500/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/30"
+                    placeholder="One paragraph: space the brand plays in, voice, audience, and products (4–6 sentences)."
+                    value={entry.description}
+                    onChange={(e) => {
+                      const next = [...childBrands];
+                      next[index] = { ...next[index], description: e.target.value };
+                      setChildBrands(next);
+                    }}
+                  />
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={() => setChildBrands((prev) => [...prev, { name: "", description: "" }])}
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-white/20 bg-white/5 py-2.5 text-sm font-medium text-slate-400 transition hover:border-cyan-500/40 hover:bg-white/10 hover:text-white"
+              >
+                <Plus className="h-4 w-4" />
+                Add child brand
+              </button>
+            </div>
           </div>
           <div>
-            <label htmlFor="brief" className="mb-1 block text-sm font-medium text-slate-300">
+            <label htmlFor="innovationFocus" className="mb-1 block text-sm font-medium text-slate-300">
               What should the innovation engine focus on?
             </label>
             <textarea
-              id="brief"
-              rows={8}
+              id="innovationFocus"
+              rows={6}
               className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-white placeholder:text-slate-500 focus:border-cyan-500/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/30"
-              placeholder="Focus on innovations and potential opportunities in the aircare space"
-              value={brief}
-              onChange={(e) => setBrief(e.target.value)}
+              placeholder="Opportunities, white space, strategic priorities for concept exploration"
+              value={innovationFocus}
+              onChange={(e) => setInnovationFocus(e.target.value)}
             />
           </div>
         </section>
@@ -523,6 +687,7 @@ export default function BriefPage() {
           {loading ? "Generating…" : "Generate"}
         </button>
       </form>
+      )}
     </div>
     </div>
   );

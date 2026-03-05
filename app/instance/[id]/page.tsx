@@ -38,6 +38,18 @@ export default function InstancePage({ params }: { params: { id: string } | Prom
   }, [params]);
 
   const load = useCallback(async (instanceId: string) => {
+    const cached = typeof window !== "undefined" ? sessionStorage.getItem(`boi_instance_${instanceId}`) : null;
+    let cachedInstance: PrototypeInstanceView | null = null;
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached) as PrototypeInstanceView;
+        if (parsed.id === instanceId) {
+          cachedInstance = parsed;
+          setInstance(parsed);
+          sessionStorage.removeItem(`boi_instance_${instanceId}`);
+        }
+      } catch (_) {}
+    }
     const res = await fetch(`/api/instances/${instanceId}`);
     const data = await res.json();
     if (!res.ok) {
@@ -45,7 +57,13 @@ export default function InstancePage({ params }: { params: { id: string } | Prom
       setLoading(false);
       return;
     }
-    setInstance(data as PrototypeInstanceView);
+    const fetched = data as PrototypeInstanceView;
+    // If fetch doesn't have preGeneratedFlowData but we had it from create response cache, keep it so the first-pill demo works
+    if (cachedInstance?.preGeneratedFlowData && !fetched.preGeneratedFlowData) {
+      setInstance({ ...fetched, preGeneratedFlowData: cachedInstance.preGeneratedFlowData });
+    } else {
+      setInstance(fetched);
+    }
     setNeedsAuth(!!data.passwordProtected);
     setLoading(false);
   }, []);
@@ -561,8 +579,42 @@ export default function InstancePage({ params }: { params: { id: string } | Prom
         features={instance.features}
         briefSummary={instance.briefSummary}
         firstRecentProjectDetail={instance.firstRecentProjectDetail}
+        preGeneratedFlowData={instance.preGeneratedFlowData}
         editMode={editMode}
-        onFlowViewChange={(flowView) => setIsDashboardView(flowView === "dashboard")}
+        refineUIMode={refinePopupOpen}
+        onUpdateFirstRecentProjectDetail={async (detail) => {
+          if (!id) throw new Error("No instance id");
+          const res = await fetch(`/api/instances/${id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ firstRecentProjectDetail: detail }),
+          });
+          if (!res.ok) throw new Error("Failed to save");
+          const data = await res.json();
+          setInstance(data as PrototypeInstanceView);
+          setEditMode(false);
+        }}
+        onPatchFirstRecentConcept={id ? async (payload) => {
+          const res = await fetch(`/api/instances/${id}/concept`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          if (!res.ok) throw new Error("Failed to save concept");
+          const data = await res.json();
+          if (data.firstRecentProjectDetail != null) {
+            setInstance((prev) => prev ? { ...prev, firstRecentProjectDetail: data.firstRecentProjectDetail } : prev);
+          }
+        } : undefined}
+        onFlowViewChange={(flowView) => {
+          setIsDashboardView(flowView === "dashboard");
+          // Refetch instance when entering innovation flow so we have latest preGeneratedFlowData (in case it was written after first load)
+          if (flowView === "defineScope" && id) {
+            fetch(`/api/instances/${id}`)
+              .then((res) => res.ok ? res.json() : null)
+              .then((data) => data && setInstance(data as PrototypeInstanceView));
+          }
+        }}
         onSaveContent={async (content) => {
           if (!id) return;
           const res = await fetch(`/api/instances/${id}`, {

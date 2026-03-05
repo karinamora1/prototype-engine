@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { ChevronLeft, ChevronRight, X, Clock, Zap, FileText, ExternalLink, TrendingUp, Globe, ArrowRight, Target, Search, Home, ChevronDown, AlertTriangle, Info, Loader2, Trash2, Leaf, Lightbulb, Droplets, Sparkles, Lock, Minus, Check, EllipsisVertical, Megaphone, Tag, SprayCan, Flower2, LogOut } from "lucide-react";
-import type { BrandTheme, BrandIdentity, ContentMap, FeatureFlags, FirstRecentProjectDetail } from "@/lib/types";
+import { ChevronLeft, ChevronRight, X, Clock, Zap, FileText, ExternalLink, TrendingUp, Globe, ArrowRight, Target, Search, Home, ChevronDown, AlertTriangle, Info, Loader2, Trash2, Leaf, Lightbulb, Droplets, Sparkles, Lock, Minus, Check, EllipsisVertical, Megaphone, Tag, SprayCan, Flower2, LogOut, Pencil } from "lucide-react";
+import type { BrandTheme, BrandIdentity, ContentMap, FeatureFlags, FirstRecentProjectDetail, PreGeneratedFlowData } from "@/lib/types";
 import { buildFullEditContent } from "@/lib/content-editor-utils";
+import { compressImageFile } from "@/lib/image-compress";
 
 export interface BasePrototypeProps {
   theme: BrandTheme;
@@ -16,8 +17,16 @@ export interface BasePrototypeProps {
   briefSummary?: string;
   /** Pre-generated detail for the first recent project (from instance creation). When present, used instead of fetching. */
   firstRecentProjectDetail?: FirstRecentProjectDetail | null;
+  /** Pre-generated flow data for first focus pill (insights, opportunity spaces, concepts for first opp). Demo: first path shows content immediately. */
+  preGeneratedFlowData?: PreGeneratedFlowData | null;
   /** When true, dashboard home text is editable and Save button exits edit mode. */
   editMode?: boolean;
+  /** When true (e.g. Refine UI popup open), first recent project concepts show replace-image control. */
+  refineUIMode?: boolean;
+  /** Called when first recent project detail is updated (refine copy save or refine UI image replace). Only used for instance page. */
+  onUpdateFirstRecentProjectDetail?: (detail: FirstRecentProjectDetail) => void | Promise<void>;
+  /** When provided, first recent project concept cards show an edit icon; save updates only that one concept via PATCH /api/instances/[id]/concept. */
+  onPatchFirstRecentConcept?: (payload: { opportunityId: string; conceptId: string; title?: string; overview?: string; image?: string }) => void | Promise<void>;
   /** Called when user saves in edit mode; pass updated content to persist. Only the instance is updated—not the base prototype or defaults. */
   onSaveContent?: (content: ContentMap) => void | Promise<void>;
   /** Called when the main flow view changes (e.g. "dashboard", "defineScope"). Use to show/hide Edit mode only on dashboard. */
@@ -67,14 +76,14 @@ const STATIC_PROJECT_DETAIL_OPPORTUNITIES = [
   },
 ];
 
-/** Parse comma-separated brand options from content; excludes "Global" and the client/project name (brand.name). */
+/** Parse comma-separated brand options from content; excludes "Global", "All", and the client/project name (brand.name). */
 function parseBrandOptions(content: ContentMap, brandName: string): string[] {
   const raw = content.brandOptions ?? content.selectorLabel ?? "";
   const opts = raw
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean)
-    .filter((o) => o !== "Global" && o !== brandName);
+    .filter((o) => o !== "Global" && o !== "All" && o !== brandName);
   return opts.length > 0 ? opts : ["Brand"];
 }
 
@@ -175,7 +184,7 @@ function InlineEditable({
  * Innovation dashboard: fixed layout and structure; theme, brand, and copy are dynamic.
  * Two-column layout: sidebar + main content (opportunity cards, insights, personas, documents).
  */
-export function BasePrototype({ theme, brand, content, features, enableAIGeneratedContent = true, briefSummary, firstRecentProjectDetail, editMode = false, onSaveContent, onFlowViewChange }: BasePrototypeProps) {
+export function BasePrototype({ theme, brand, content, features, enableAIGeneratedContent = true, briefSummary, firstRecentProjectDetail, preGeneratedFlowData, editMode = false, refineUIMode = false, onUpdateFirstRecentProjectDetail, onPatchFirstRecentConcept, onSaveContent, onFlowViewChange }: BasePrototypeProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [editContent, setEditContent] = useState<ContentMap>(() => ({ ...content }));
   const [editingContentKey, setEditingContentKey] = useState<string | null>(null);
@@ -213,7 +222,7 @@ export function BasePrototype({ theme, brand, content, features, enableAIGenerat
     experienceOptimization: false,
     styleDifferentiator: true,
   });
-  const brandOptions = parseBrandOptions(content, brand.name);
+  const brandOptions = ["All", ...parseBrandOptions(content, brand.name)];
   useEffect(() => {
     if (editMode) {
       setEditContent(buildFullEditContent(content));
@@ -224,7 +233,7 @@ export function BasePrototype({ theme, brand, content, features, enableAIGenerat
     onFlowViewChange?.(flowView);
   }, [flowView, onFlowViewChange]);
   useEffect(() => {
-    const opts = parseBrandOptions(content, brand.name);
+    const opts = ["All", ...parseBrandOptions(content, brand.name)];
     if (opts.length > 0) {
       setSelectedBrand((prev) => (opts.includes(prev) ? prev : opts[0] ?? brand.name));
     }
@@ -451,6 +460,12 @@ export function BasePrototype({ theme, brand, content, features, enableAIGenerat
   const [projectDetailLoading, setProjectDetailLoading] = useState(false);
   const [projectDetailError, setProjectDetailError] = useState<string | null>(null);
   const [enrichingProject, setEnrichingProject] = useState(false);
+  /** Local edits to first recent project (concept titles, overviews, images). Used when editMode or refineUIMode and viewing first project. */
+  const [editedFirstRecentProjectDetail, setEditedFirstRecentProjectDetail] = useState<FirstRecentProjectDetail | null>(null);
+  /** When set, this concept card shows inline edit form; save sends only this concept via onPatchFirstRecentConcept. */
+  const [editingConcept, setEditingConcept] = useState<{ oppId: string; conceptId: string } | null>(null);
+  const [editingConceptDraft, setEditingConceptDraft] = useState<{ title: string; overview: string; image: string } | null>(null);
+  const [savingConcept, setSavingConcept] = useState(false);
   // Markets are fixed across the prototype (always selected)
   const [selectedMarkets, setSelectedMarkets] = useState<Set<string>>(new Set(["USA", "JPN", "DEU"]));
   const [dataSourceToggles, setDataSourceToggles] = useState<Record<string, boolean>>({
@@ -604,6 +619,28 @@ export function BasePrototype({ theme, brand, content, features, enableAIGenerat
       setLoadingProgress((p) => (p >= 90 ? 90 : Math.min(90, p + step)));
     }, intervalMs);
 
+    // First focus pill demo: use pre-generated insights when available (no API call); still show 2s loading
+    const preInsights = preGeneratedFlowData?.insights;
+    if (preInsights && preInsights.length >= 4) {
+      clearInterval(t);
+      const preGenDuration = 2000;
+      const preGenIntervalMs = 50;
+      const preGenStep = (90 / preGenDuration) * preGenIntervalMs;
+      const t2 = setInterval(() => {
+        setLoadingProgress((p) => (p >= 90 ? 90 : Math.min(90, p + preGenStep)));
+      }, preGenIntervalMs);
+      const done = setTimeout(() => {
+        clearInterval(t2);
+        setHunches(preInsights);
+        setLoadingProgress(100);
+        setTimeout(() => setFlowView("insightStudio"), 200);
+      }, preGenDuration);
+      return () => {
+        clearInterval(t2);
+        clearTimeout(done);
+      };
+    }
+
     if (!enableAIGeneratedContent) {
       // No AI: just run progress bar then transition with default hunches
       const done = setTimeout(() => {
@@ -688,7 +725,7 @@ export function BasePrototype({ theme, brand, content, features, enableAIGenerat
       clearInterval(t);
       controller.abort();
     };
-  }, [flowView, enableAIGeneratedContent]);
+  }, [flowView, enableAIGeneratedContent, preGeneratedFlowData?.insights]);
 
   // When generating opportunity spaces: call AI with subject + insights (or use defaults), then transition to Opportunity Spaces
   useEffect(() => {
@@ -707,6 +744,29 @@ export function BasePrototype({ theme, brand, content, features, enableAIGenerat
     const t = setInterval(() => {
       setGeneratingProgress((p) => (p >= 90 ? 90 : Math.min(90, p + step)));
     }, intervalMs);
+
+    // First focus pill demo: use pre-generated opportunity spaces when available (no API call); still show 2s loading
+    const preSpaces = preGeneratedFlowData?.opportunitySpaces;
+    if (preSpaces && preSpaces.length >= 4) {
+      clearInterval(t);
+      const preGenDuration = 2000;
+      const preGenIntervalMs = 50;
+      const preGenStep = (90 / preGenDuration) * preGenIntervalMs;
+      setOpportunitySpacesLiveStage("Loading…");
+      const t2 = setInterval(() => {
+        setGeneratingProgress((p) => (p >= 90 ? 90 : Math.min(90, p + preGenStep)));
+      }, preGenIntervalMs);
+      const done = setTimeout(() => {
+        clearInterval(t2);
+        setOpportunitySpacesList(preSpaces);
+        setGeneratingProgress(100);
+        setTimeout(() => setFlowView("opportunitySpaces"), 300);
+      }, preGenDuration);
+      return () => {
+        clearInterval(t2);
+        clearTimeout(done);
+      };
+    }
 
     if (!enableAIGeneratedContent) {
       // No AI: just run progress bar then transition with current opportunity spaces list
@@ -786,7 +846,7 @@ export function BasePrototype({ theme, brand, content, features, enableAIGenerat
       clearInterval(t);
       controller.abort();
     };
-  }, [flowView, enableAIGeneratedContent]);
+  }, [flowView, enableAIGeneratedContent, preGeneratedFlowData?.opportunitySpaces]);
 
   useEffect(() => {
     if (!opportunitySpacesLiveText) return;
@@ -1088,7 +1148,13 @@ export function BasePrototype({ theme, brand, content, features, enableAIGenerat
                           className="flex flex-col rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
                         >
                           <div className="flex gap-3">
-                            <img src={concept.image} alt="" className="h-20 w-24 flex-shrink-0 rounded-lg object-cover" />
+                            {concept.image ? (
+                              <img src={concept.image} alt="" className="h-20 w-24 flex-shrink-0 rounded-lg object-cover" />
+                            ) : (
+                              <div className="flex h-20 w-24 flex-shrink-0 items-center justify-center rounded-lg bg-slate-200">
+                                <Loader2 className="h-6 w-6 animate-spin text-slate-400" aria-hidden />
+                              </div>
+                            )}
                             <div className="min-w-0 flex-1">
                               <h2 className="text-base font-bold text-slate-900">{concept.title}</h2>
                               <p className="mt-1 line-clamp-3 text-xs leading-relaxed text-slate-600">{concept.overview}</p>
@@ -1469,7 +1535,13 @@ export function BasePrototype({ theme, brand, content, features, enableAIGenerat
                                     }`}
                                   >
                                     <div className="flex w-full items-center gap-2">
-                                      <img src={concept.image} alt="" className="h-8 w-9 flex-shrink-0 rounded-lg object-cover" />
+                                      {concept.image ? (
+                                        <img src={concept.image} alt="" className="h-8 w-9 flex-shrink-0 rounded-lg object-cover" />
+                                      ) : (
+                                        <div className="flex h-8 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-slate-200">
+                                          <Loader2 className="h-4 w-4 animate-spin text-slate-400" aria-hidden />
+                                        </div>
+                                      )}
                                       <div className="min-w-0 flex-1">
                                         <p className="text-[10px] font-semibold tracking-tight text-slate-900 leading-tight line-clamp-2">{concept.title}</p>
                                       </div>
@@ -2043,30 +2115,28 @@ export function BasePrototype({ theme, brand, content, features, enableAIGenerat
                 {flowView === "opportunitySpacesLoading" && (
                   <div className="flex min-h-full flex-col items-center justify-center">
                     <div className="mx-auto w-full max-w-2xl">
-                      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-                        <p
-                          className="mb-1 text-sm font-semibold text-slate-800 animate-insight-in"
-                          style={{ animationDelay: "0.1s" }}
+                      <p
+                        className="mb-1 text-sm font-semibold text-slate-800 animate-insight-in"
+                        style={{ animationDelay: "0.1s" }}
+                      >
+                        Generating Opportunity Spaces
+                      </p>
+                      {(opportunitySpacesLiveStage || opportunitySpacesLiveText) && (
+                        <div
+                          className="mt-4 flex flex-col rounded-lg border border-slate-200 bg-slate-50 p-3 animate-insight-in overflow-hidden"
+                          style={{ animationDelay: "0.3s", height: "33vh" }}
                         >
-                          Generating Opportunity Spaces
-                        </p>
-                        {(opportunitySpacesLiveStage || opportunitySpacesLiveText) && (
-                          <div
-                            className="mt-4 flex flex-col rounded-lg border border-slate-200 bg-slate-50 p-3 animate-insight-in overflow-hidden"
-                            style={{ animationDelay: "0.3s", height: "33vh" }}
+                          {opportunitySpacesLiveStage && (
+                            <p className="mb-2 flex-shrink-0 text-xs font-medium text-slate-600">{opportunitySpacesLiveStage}</p>
+                          )}
+                          <pre
+                            ref={opportunitySpacesLivePreRef}
+                            className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-relaxed text-slate-700"
                           >
-                            {opportunitySpacesLiveStage && (
-                              <p className="mb-2 flex-shrink-0 text-xs font-medium text-slate-600">{opportunitySpacesLiveStage}</p>
-                            )}
-                            <pre
-                              ref={opportunitySpacesLivePreRef}
-                              className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-relaxed text-slate-700"
-                            >
-                              {opportunitySpacesLiveText}
-                            </pre>
-                          </div>
-                        )}
-                      </div>
+                            {opportunitySpacesLiveText}
+                          </pre>
+                        </div>
+                      )}
                       <div className="mt-8 flex flex-col items-center gap-3">
                         <p className="text-sm font-medium text-slate-700">{c("generatingOpportunitySpacesMessage")}</p>
                         <div className="w-full max-w-md">
@@ -2227,7 +2297,13 @@ export function BasePrototype({ theme, brand, content, features, enableAIGenerat
                     {/* Two-column header: image left, title + description right */}
                     <div className="flex overflow-hidden rounded-xl border border-[var(--color-primary)] bg-[var(--color-primary)]">
                       <div className="relative w-64 flex-shrink-0 bg-slate-100 sm:w-72 aspect-square overflow-hidden">
-                        <img src={selectedConcept.image} alt="" className="h-full w-full object-cover" />
+                        {selectedConcept.image ? (
+                          <img src={selectedConcept.image} alt="" className="h-full w-full object-cover" />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center bg-slate-200">
+                            <Loader2 className="h-10 w-10 animate-spin text-slate-400" aria-hidden />
+                          </div>
+                        )}
                         <button
                           type="button"
                           className="absolute right-2 top-2 rounded-lg border border-white/80 bg-white/95 px-2.5 py-1 text-xs font-medium text-slate-700 shadow-sm backdrop-blur-sm hover:bg-white"
@@ -2681,6 +2757,37 @@ export function BasePrototype({ theme, brand, content, features, enableAIGenerat
                     onClick={async () => {
                       setGeneratingConcepts(true);
                       const opp = opportunitySpacesList.find((o) => o.id === selectedOpportunityId);
+                      // First focus pill demo: use pre-generated concepts for first opportunity (no API call); show 2s loading
+                      if (selectedOpportunityId === "1" && preGeneratedFlowData?.conceptsForFirstOpportunity?.length) {
+                        await new Promise((r) => setTimeout(r, 2000));
+                        setConceptsList((prev) => [
+                          ...prev.filter((c) => c.opportunityId !== "1"),
+                          ...preGeneratedFlowData.conceptsForFirstOpportunity,
+                        ]);
+                        setConceptsView(true);
+                        setSelectedConceptId(preGeneratedFlowData.conceptsForFirstOpportunity[0].id);
+                        setGeneratingConcepts(false);
+                        return;
+                      }
+                      let childBrands: { name: string; description: string }[] | undefined;
+                      try {
+                        const raw = content.childBrandsJson;
+                        if (typeof raw === "string" && raw.trim()) {
+                          const parsed = JSON.parse(raw) as unknown;
+                          if (Array.isArray(parsed)) {
+                            childBrands = parsed
+                              .filter((b: unknown) => b && typeof b === "object" && "name" in b)
+                              .map((b: unknown) => ({
+                                name: String((b as { name?: unknown }).name ?? "").trim(),
+                                description: String((b as { description?: unknown }).description ?? "").trim(),
+                              }))
+                              .filter((b) => b.name) as { name: string; description: string }[];
+                            if (childBrands.length === 0) childBrands = undefined;
+                          }
+                        }
+                      } catch {
+                        childBrands = undefined;
+                      }
                       const payload = {
                         opportunityId: selectedOpportunityId,
                         title: opp?.title ?? "Opportunity",
@@ -2689,25 +2796,74 @@ export function BasePrototype({ theme, brand, content, features, enableAIGenerat
                         consumerGoals: opp?.consumerGoals ?? [],
                         painPoints: opp?.painPoints ?? [],
                         markets: opp?.markets ?? [],
+                        ...(childBrands && childBrands.length > 0 ? { childBrands } : {}),
                       };
                       try {
-                        const res = await fetch("/api/generate-concepts", {
+                        const res = await fetch("/api/generate-concepts/stream", {
                           method: "POST",
                           headers: { "Content-Type": "application/json" },
                           body: JSON.stringify(payload),
                         });
-                        const data = await res.json().catch(() => ({}));
-                        if (res.ok && Array.isArray(data.concepts) && data.concepts.length > 0) {
-                          setConceptsList((prev) => [
-                            ...prev.filter((c) => c.opportunityId !== selectedOpportunityId),
-                            ...data.concepts,
-                          ]);
-                          setConceptsView(true);
-                          setSelectedConceptId(data.concepts[0].id);
-                        } else {
-                          const ids = generateConceptsForCurrentOpportunity(selectedOpportunityId);
-                          setConceptsView(true);
-                          setSelectedConceptId(ids[0] ?? null);
+                        if (!res.ok || !res.body) throw new Error("Failed to stream concepts");
+                        const reader = res.body.getReader();
+                        const decoder = new TextDecoder();
+                        let buf = "";
+                        while (true) {
+                          const { done, value } = await reader.read();
+                          if (done) break;
+                          buf += decoder.decode(value, { stream: true });
+                          const parts = buf.split("\n\n");
+                          buf = parts.pop() ?? "";
+                          for (const part of parts) {
+                            const lines = part.split("\n");
+                            let eventName = "message";
+                            let dataLine = "";
+                            for (const line of lines) {
+                              if (line.startsWith("event:")) eventName = line.slice(6).trim();
+                              if (line.startsWith("data:")) dataLine += line.slice(5).trim();
+                            }
+                            if (!dataLine) continue;
+                            let payload: { concepts?: (ConceptItem & { image?: string | null })[]; index?: number; url?: string | null } | null = null;
+                            try {
+                              payload = JSON.parse(dataLine);
+                            } catch {
+                              payload = null;
+                            }
+                            if (!payload) continue;
+                            if (eventName === "concepts" && Array.isArray(payload.concepts) && payload.concepts.length > 0) {
+                              const list = payload.concepts.map((c: ConceptItem & { image?: string | null }) => ({
+                                ...c,
+                                image: c.image && c.image.trim() !== "" ? c.image : "",
+                              })) as ConceptItem[];
+                              setConceptsList((prev) => [
+                                ...prev.filter((c) => c.opportunityId !== selectedOpportunityId),
+                                ...list,
+                              ]);
+                              setConceptsView(true);
+                              setSelectedConceptId(list[0].id);
+                            } else if (eventName === "image" && typeof payload.index === "number") {
+                              const idx = payload.index;
+                              const url = payload.url != null && payload.url !== "" ? payload.url : "";
+                              setConceptsList((prev) => {
+                                const forOpp = prev.filter((c) => c.opportunityId === selectedOpportunityId);
+                                if (idx >= forOpp.length) return prev;
+                                const updated = [...forOpp];
+                                updated[idx] = { ...updated[idx], image: url };
+                                return [...prev.filter((c) => c.opportunityId !== selectedOpportunityId), ...updated];
+                              });
+                            } else if (eventName === "final" && Array.isArray(payload.concepts) && payload.concepts.length > 0) {
+                              const list = payload.concepts.map((c: ConceptItem & { image?: string | null }) => ({
+                                ...c,
+                                image: c.image && c.image.trim() !== "" ? c.image : "",
+                              })) as ConceptItem[];
+                              setConceptsList((prev) => [
+                                ...prev.filter((c) => c.opportunityId !== selectedOpportunityId),
+                                ...list,
+                              ]);
+                            } else if (eventName === "error") {
+                              throw new Error("Concept generation failed");
+                            }
+                          }
                         }
                       } catch {
                         const ids = generateConceptsForCurrentOpportunity(selectedOpportunityId);
@@ -2832,9 +2988,15 @@ export function BasePrototype({ theme, brand, content, features, enableAIGenerat
           ) : (() => {
             const fromPreGenerated = firstRecentProjectDetail?.projectTitle === selectedProjectName ? firstRecentProjectDetail?.opportunities : undefined;
             const cached = selectedProjectName ? projectDetailCache[selectedProjectName] : null;
-            const projectDetailOpportunities =
+            const baseOpportunities =
               !enableAIGeneratedContent ? STATIC_PROJECT_DETAIL_OPPORTUNITIES : fromPreGenerated ?? cached?.opportunities ?? [];
+            const isFirstRecentProject = firstRecentProjectDetail?.projectTitle === selectedProjectName;
+            const projectDetailOpportunities =
+              isFirstRecentProject && editedFirstRecentProjectDetail
+                ? editedFirstRecentProjectDetail.opportunities
+                : baseOpportunities;
             if (projectDetailOpportunities.length === 0) return null;
+
                 return (
               <div className="space-y-10">
                 {projectDetailOpportunities.map((opp) => (
@@ -2845,16 +3007,111 @@ export function BasePrototype({ theme, brand, content, features, enableAIGenerat
                       {opp.concepts.map((concept) => {
                         const fallbackImage =
                           "https://images.unsplash.com/photo-1519389950473-47ba0277781c?auto=format&fit=crop&w=800&q=80";
-                        const imgSrc = enableAIGeneratedContent ? concept.image : fallbackImage;
+                        const imgSrc = enableAIGeneratedContent ? (concept.image || fallbackImage) : fallbackImage;
+                        const canEdit = isFirstRecentProject && !!onPatchFirstRecentConcept;
+                        const isEditing = editingConcept?.oppId === opp.id && editingConcept?.conceptId === concept.id;
+                        const draft = isEditing && editingConceptDraft ? editingConceptDraft : { title: concept.title, overview: concept.overview, image: concept.image || "" };
                         return (
                           <div
                             key={concept.id}
                             className="flex flex-col overflow-hidden rounded-lg border border-slate-200 bg-slate-50 shadow-sm transition hover:border-[var(--color-primary)]/40 hover:shadow"
                           >
-                            <img src={imgSrc} alt={concept.title ?? ""} className="h-32 w-full object-cover" />
+                            <div className="relative h-32 w-full shrink-0 bg-slate-200">
+                              <img src={isEditing ? (draft.image || fallbackImage) : imgSrc} alt={draft.title} className="h-32 w-full object-cover" />
+                              {canEdit && !isEditing && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingConcept({ oppId: opp.id, conceptId: concept.id });
+                                    setEditingConceptDraft({ title: concept.title, overview: concept.overview, image: concept.image || "" });
+                                  }}
+                                  className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-white/90 text-slate-600 shadow hover:bg-white hover:text-slate-900"
+                                  aria-label="Edit concept"
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </button>
+                              )}
+                              {isEditing && (
+                                <label className="absolute inset-0 flex cursor-pointer items-center justify-center bg-black/40 opacity-0 transition hover:opacity-100">
+                                  <span className="rounded bg-white px-2 py-1 text-xs font-medium text-slate-800 shadow">Replace image</span>
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    className="sr-only"
+                                    onChange={async (e) => {
+                                      const file = e.target.files?.[0];
+                                      if (!file) return;
+                                      e.target.value = "";
+                                      try {
+                                        const dataUrl = await compressImageFile(file);
+                                        setEditingConceptDraft((d) => d ? { ...d, image: dataUrl } : null);
+                                      } catch (_) {
+                                        const reader = new FileReader();
+                                        reader.onload = () => setEditingConceptDraft((d) => d ? { ...d, image: reader.result as string } : null);
+                                        reader.readAsDataURL(file);
+                                      }
+                                    }}
+                                  />
+                                </label>
+                              )}
+                            </div>
                             <div className="flex flex-1 flex-col p-3">
-                              <p className="text-sm font-semibold text-slate-900 line-clamp-2">{concept.title}</p>
-                              <p className="mt-1 line-clamp-2 text-xs text-slate-600">{concept.overview}</p>
+                              {isEditing ? (
+                                <>
+                                  <input
+                                    type="text"
+                                    value={draft.title}
+                                    onChange={(e) => setEditingConceptDraft((d) => d ? { ...d, title: e.target.value } : null)}
+                                    className="mb-1 w-full rounded border border-slate-200 bg-white px-2 py-1 text-sm font-semibold text-slate-900"
+                                    placeholder="Title"
+                                  />
+                                  <textarea
+                                    value={draft.overview}
+                                    onChange={(e) => setEditingConceptDraft((d) => d ? { ...d, overview: e.target.value } : null)}
+                                    rows={2}
+                                    className="min-h-0 w-full resize-none rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600"
+                                    placeholder="Overview"
+                                  />
+                                  <div className="mt-2 flex gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => { setEditingConcept(null); setEditingConceptDraft(null); }}
+                                      className="rounded border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
+                                    >
+                                      Cancel
+                                    </button>
+                                    <button
+                                      type="button"
+                                      disabled={savingConcept}
+                                      onClick={async () => {
+                                        if (!editingConcept || !editingConceptDraft || !onPatchFirstRecentConcept) return;
+                                        setSavingConcept(true);
+                                        try {
+                                          await onPatchFirstRecentConcept({
+                                            opportunityId: editingConcept.oppId,
+                                            conceptId: editingConcept.conceptId,
+                                            title: editingConceptDraft.title,
+                                            overview: editingConceptDraft.overview,
+                                            image: editingConceptDraft.image || undefined,
+                                          });
+                                          setEditingConcept(null);
+                                          setEditingConceptDraft(null);
+                                        } finally {
+                                          setSavingConcept(false);
+                                        }
+                                      }}
+                                      className="rounded bg-[var(--color-primary)] px-2 py-1 text-xs font-medium text-[var(--color-primary-foreground)] hover:opacity-90 disabled:opacity-50"
+                                    >
+                                      {savingConcept ? "Saving…" : "Save"}
+                                    </button>
+                                  </div>
+                                </>
+                              ) : (
+                                <>
+                                  <p className="text-sm font-semibold text-slate-900 line-clamp-2">{concept.title}</p>
+                                  <p className="mt-1 line-clamp-2 text-xs text-slate-600">{concept.overview}</p>
+                                </>
+                              )}
                             </div>
                           </div>
                         );
@@ -2893,7 +3150,13 @@ export function BasePrototype({ theme, brand, content, features, enableAIGenerat
               <span className="text-sm text-[var(--color-muted)]">Double-click any text to edit</span>
               <button
                 type="button"
-                onClick={() => onSaveContent?.(editContent)}
+                onClick={async () => {
+                  await onSaveContent?.(editContent);
+                  if (editedFirstRecentProjectDetail && onUpdateFirstRecentProjectDetail) {
+                    await onUpdateFirstRecentProjectDetail(editedFirstRecentProjectDetail);
+                    setEditedFirstRecentProjectDetail(null);
+                  }
+                }}
                 className="rounded-lg bg-[var(--color-primary)] px-5 py-2.5 text-sm font-semibold text-[var(--color-primary-foreground)] hover:opacity-90"
               >
                 Save

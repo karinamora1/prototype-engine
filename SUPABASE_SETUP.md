@@ -36,6 +36,7 @@ The `instances` table stores:
 - **source_instance_id** - If this is a published copy, links to source
 - **published_slug** - If published, the public URL slug
 - **data** - JSONB containing: theme, brand, content, features, firstRecentProjectDetail
+- **pre_generated_flow_data** - (optional) JSONB for first-pill demo: insights, opportunity spaces, concepts. Run `supabase-migration-pre-generated-flow.sql` in SQL Editor to add this column and avoid timeouts when saving pre-generated flow data.
 
 The `instance_index` table provides fast lookups for the library page without loading full instance data.
 

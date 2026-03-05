@@ -78,6 +78,39 @@ export interface FirstRecentProjectDetail {
   };
 }
 
+/** Pre-generated content for the first "focus pill" in the innovation flow (insights → opportunity spaces → concepts for first opportunity). Used for demo so the first path shows content immediately. */
+export interface PreGeneratedFlowData {
+  /** 4 insights for Insights Studio (hunches) */
+  insights: Array<{ id: string; title: string; category: string; description: string }>;
+  /** 4 opportunity spaces (same shape as generate-opportunity-spaces/stream response) */
+  opportunitySpaces: Array<{
+    id: string;
+    title: string;
+    snippet: string;
+    score: number;
+    image: string;
+    benefits: string[];
+    consumerGoals: string[];
+    painPoints: string[];
+    markets?: Array<{ id: string; market: string; alignment: string; nuances: string[] }>;
+  }>;
+  /** Concepts for the first opportunity only (id "1"); same shape as ConceptItem in BasePrototype */
+  conceptsForFirstOpportunity: Array<{
+    id: string;
+    opportunityId: string;
+    title: string;
+    image: string;
+    shortSummary: string;
+    overview: string;
+    variations: string[];
+    painPointsSolved: string[];
+    consumerGoal: string;
+    painPoints: string[];
+    opportunityScore: number;
+    pricePackSizeOptions: string[];
+  }>;
+}
+
 /** Optional features that can be toggled on/off per instance */
 export type FeatureFlags = Record<string, boolean>;
 
@@ -98,6 +131,8 @@ export interface PrototypeInstance {
   briefSummary: string;
   /** Pre-generated detail for the first recent project (2 opportunities + concepts). Generated at instance creation. */
   firstRecentProjectDetail?: FirstRecentProjectDetail | null;
+  /** Pre-generated flow data for the first focus pill (insights, opportunity spaces, concepts for first opp). Demo: first path shows content immediately. */
+  preGeneratedFlowData?: PreGeneratedFlowData | null;
   /** If set, this instance is a published copy of the instance with this id. Hidden from library; view at /p/[slug]. */
   sourceInstanceId?: string;
   /** If set, this instance has been published; the published page is at /p/[publishedSlug]. */
@@ -120,6 +155,8 @@ export interface CreateInstanceInput {
   briefSummary: string;
   /** Optional; if not provided, generated at create time from brief + first recent project name. */
   firstRecentProjectDetail?: FirstRecentProjectDetail | null;
+  /** Optional; if provided, used for demo so first focus pill has insights + opportunity spaces + concepts ready. */
+  preGeneratedFlowData?: PreGeneratedFlowData | null;
   /** When creating a published copy, set to the source instance id so the copy is hidden from the library. */
   sourceInstanceId?: string;
 }

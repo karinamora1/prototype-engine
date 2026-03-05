@@ -138,6 +138,7 @@ export default function PublishedPage({ params }: { params: { slug: string } | P
         features={instance.features}
         briefSummary={instance.briefSummary}
         firstRecentProjectDetail={instance.firstRecentProjectDetail}
+        preGeneratedFlowData={instance.preGeneratedFlowData}
       />
     </div>
   );

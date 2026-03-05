@@ -4,7 +4,7 @@
 
 import { nanoid } from "nanoid";
 import { supabase } from "./supabase";
-import type { PrototypeInstance, CreateInstanceInput, ContentMap } from "./types";
+import type { PrototypeInstance, CreateInstanceInput, ContentMap, PreGeneratedFlowData, FirstRecentProjectDetail } from "./types";
 
 export type IndexEntry = {
   id: string;
@@ -37,7 +37,9 @@ function simpleHash(password: string): string {
 
 export async function createInstance(input: CreateInstanceInput): Promise<PrototypeInstance> {
   const id = nanoid(10);
-  const slug = input.slug ?? slugify(input.name);
+  const baseSlug = (input.slug ?? slugify(input.name)) || "instance";
+  // Ensure unique slug: when slug is not explicitly provided (e.g. from generate route), append nanoid to avoid duplicate key
+  const slug = input.slug != null ? baseSlug : `${baseSlug}-${nanoid(6)}`;
   const now = new Date().toISOString();
   const trimmedPassword = input.password?.trim();
   
@@ -54,6 +56,7 @@ export async function createInstance(input: CreateInstanceInput): Promise<Protot
     passwordHash: trimmedPassword ? simpleHash(trimmedPassword) : null,
     briefSummary: input.briefSummary,
     firstRecentProjectDetail: input.firstRecentProjectDetail ?? undefined,
+    preGeneratedFlowData: input.preGeneratedFlowData ?? undefined,
     sourceInstanceId: input.sourceInstanceId,
   };
 
@@ -71,6 +74,7 @@ export async function createInstance(input: CreateInstanceInput): Promise<Protot
       content: input.content,
       features: input.features,
       firstRecentProjectDetail: input.firstRecentProjectDetail,
+      preGeneratedFlowData: input.preGeneratedFlowData,
     },
   });
 
@@ -101,34 +105,72 @@ export async function duplicateInstance(
     password: options.password,
     briefSummary: source.briefSummary,
     firstRecentProjectDetail: source.firstRecentProjectDetail ?? undefined,
+    preGeneratedFlowData: source.preGeneratedFlowData ?? undefined,
     sourceInstanceId: sourceId,
   });
 }
 
 export async function getInstance(id: string): Promise<PrototypeInstance | null> {
+  // Try full select first; if it fails (e.g. timeout from huge first_recent_project_data), retry without that column
   const { data, error } = await supabase
     .from("instances")
     .select("*")
     .eq("id", id)
     .single();
 
-  if (error || !data) return null;
+  if (error) {
+    console.error("getInstance error:", id, error.message, error.code, error.details);
+    // Retry without first_recent_project_data in case the row is too large (e.g. base64 images) and caused timeout/failure
+    const fallback = await supabase
+      .from("instances")
+      .select("id, name, slug, created_at, updated_at, password_hash, brief_summary, source_instance_id, published_slug, data, pre_generated_flow_data")
+      .eq("id", id)
+      .single();
+    if (fallback.error || !fallback.data) return null;
+    const row = fallback.data as Record<string, unknown> & { data?: Record<string, unknown> | null; pre_generated_flow_data?: unknown };
+    const dataPayload = row.data ?? {};
+    return {
+      id: row.id as string,
+      name: row.name as string,
+      slug: row.slug as string,
+      createdAt: row.created_at as string,
+      updatedAt: row.updated_at as string,
+      passwordHash: row.password_hash as string | null,
+      briefSummary: row.brief_summary as string,
+      sourceInstanceId: row.source_instance_id as string | undefined,
+      publishedSlug: row.published_slug as string | undefined,
+      theme: (dataPayload.theme ?? {}) as PrototypeInstance["theme"],
+      brand: (dataPayload.brand ?? {}) as PrototypeInstance["brand"],
+      content: (dataPayload.content ?? {}) as PrototypeInstance["content"],
+      features: (dataPayload.features ?? {}) as PrototypeInstance["features"],
+      firstRecentProjectDetail: dataPayload.firstRecentProjectDetail as PrototypeInstance["firstRecentProjectDetail"],
+      preGeneratedFlowData: (row.pre_generated_flow_data ?? dataPayload.preGeneratedFlowData) as PrototypeInstance["preGeneratedFlowData"],
+    };
+  }
+  if (!data) return null;
 
+  const row = data as Record<string, unknown> & {
+    data?: Record<string, unknown> | null;
+    pre_generated_flow_data?: unknown;
+    first_recent_project_data?: unknown;
+  };
+  const dataPayload = row.data ?? {};
   return {
-    id: data.id,
-    name: data.name,
-    slug: data.slug,
-    createdAt: data.created_at,
-    updatedAt: data.updated_at,
-    passwordHash: data.password_hash,
-    briefSummary: data.brief_summary,
-    sourceInstanceId: data.source_instance_id,
-    publishedSlug: data.published_slug,
-    theme: data.data.theme,
-    brand: data.data.brand,
-    content: data.data.content,
-    features: data.data.features,
-    firstRecentProjectDetail: data.data.firstRecentProjectDetail,
+    id: row.id as string,
+    name: row.name as string,
+    slug: row.slug as string,
+    createdAt: row.created_at as string,
+    updatedAt: row.updated_at as string,
+    passwordHash: row.password_hash as string | null,
+    briefSummary: row.brief_summary as string,
+    sourceInstanceId: row.source_instance_id as string | undefined,
+    publishedSlug: row.published_slug as string | undefined,
+    theme: (dataPayload.theme ?? {}) as PrototypeInstance["theme"],
+    brand: (dataPayload.brand ?? {}) as PrototypeInstance["brand"],
+    content: (dataPayload.content ?? {}) as PrototypeInstance["content"],
+    features: (dataPayload.features ?? {}) as PrototypeInstance["features"],
+    firstRecentProjectDetail: (row.first_recent_project_data ?? dataPayload.firstRecentProjectDetail) as PrototypeInstance["firstRecentProjectDetail"],
+    preGeneratedFlowData: (row.pre_generated_flow_data ?? dataPayload.preGeneratedFlowData) as PrototypeInstance["preGeneratedFlowData"],
   };
 }
 
@@ -139,23 +181,34 @@ export async function getInstanceBySlug(slug: string): Promise<PrototypeInstance
     .eq("slug", slug)
     .single();
 
-  if (error || !data) return null;
+  if (error) {
+    console.error("getInstanceBySlug error:", slug, error.message, error.code, error.details);
+    return null;
+  }
+  if (!data) return null;
 
+  const row = data as Record<string, unknown> & {
+    data?: Record<string, unknown> | null;
+    pre_generated_flow_data?: unknown;
+    first_recent_project_data?: unknown;
+  };
+  const dataPayload = row.data ?? {};
   return {
-    id: data.id,
-    name: data.name,
-    slug: data.slug,
-    createdAt: data.created_at,
-    updatedAt: data.updated_at,
-    passwordHash: data.password_hash,
-    briefSummary: data.brief_summary,
-    sourceInstanceId: data.source_instance_id,
-    publishedSlug: data.published_slug,
-    theme: data.data.theme,
-    brand: data.data.brand,
-    content: data.data.content,
-    features: data.data.features,
-    firstRecentProjectDetail: data.data.firstRecentProjectDetail,
+    id: row.id as string,
+    name: row.name as string,
+    slug: row.slug as string,
+    createdAt: row.created_at as string,
+    updatedAt: row.updated_at as string,
+    passwordHash: row.password_hash as string | null,
+    briefSummary: row.brief_summary as string,
+    sourceInstanceId: row.source_instance_id as string | undefined,
+    publishedSlug: row.published_slug as string | undefined,
+    theme: (dataPayload.theme ?? {}) as PrototypeInstance["theme"],
+    brand: (dataPayload.brand ?? {}) as PrototypeInstance["brand"],
+    content: (dataPayload.content ?? {}) as PrototypeInstance["content"],
+    features: (dataPayload.features ?? {}) as PrototypeInstance["features"],
+    firstRecentProjectDetail: (row.first_recent_project_data ?? dataPayload.firstRecentProjectDetail) as PrototypeInstance["firstRecentProjectDetail"],
+    preGeneratedFlowData: (row.pre_generated_flow_data ?? dataPayload.preGeneratedFlowData) as PrototypeInstance["preGeneratedFlowData"],
   };
 }
 
@@ -264,7 +317,9 @@ export async function updateInstance(
   updates: {
     theme?: Partial<PrototypeInstance["theme"]>;
     content?: Partial<ContentMap>;
+    firstRecentProjectDetail?: FirstRecentProjectDetail | null;
     publishedSlug?: string;
+    preGeneratedFlowData?: PreGeneratedFlowData | null;
   }
 ): Promise<PrototypeInstance | null> {
   const instance = await getInstance(id);
@@ -295,7 +350,56 @@ export async function updateInstance(
     instance.content = merged;
   }
 
-  // Prepare update data
+  if (updates.preGeneratedFlowData !== undefined) {
+    instance.preGeneratedFlowData = updates.preGeneratedFlowData;
+  }
+
+  if (updates.firstRecentProjectDetail !== undefined) {
+    instance.firstRecentProjectDetail = updates.firstRecentProjectDetail;
+  }
+
+  // When ONLY updating firstRecentProjectDetail, use the dedicated column to avoid huge JSONB update (prevents timeout)
+  const onlyFirstRecentProjectDetail =
+    updates.firstRecentProjectDetail !== undefined &&
+    updates.theme === undefined &&
+    updates.content === undefined &&
+    updates.publishedSlug === undefined &&
+    updates.preGeneratedFlowData === undefined;
+
+  if (onlyFirstRecentProjectDetail) {
+    const { error: updateError } = await supabase
+      .from("instances")
+      .update({ first_recent_project_data: updates.firstRecentProjectDetail })
+      .eq("id", id);
+    if (updateError) {
+      console.error("updateInstance (first_recent_project_data) failed:", id, updateError.message, updateError.details);
+      throw new Error(
+        `First recent project save failed: ${updateError.message}. Run the migration to add column: ALTER TABLE instances ADD COLUMN IF NOT EXISTS first_recent_project_data JSONB;`
+      );
+    }
+    return getInstance(id);
+  }
+
+  // When ONLY updating preGeneratedFlowData, use the dedicated column to avoid a huge JSONB update (prevents statement timeout)
+  const onlyPreGeneratedFlowData =
+    updates.preGeneratedFlowData !== undefined &&
+    updates.theme === undefined &&
+    updates.content === undefined &&
+    updates.publishedSlug === undefined;
+
+  if (onlyPreGeneratedFlowData) {
+    const { error: updateError } = await supabase
+      .from("instances")
+      .update({ pre_generated_flow_data: updates.preGeneratedFlowData })
+      .eq("id", id);
+    if (updateError) {
+      console.error("updateInstance (pre_generated_flow_data) failed:", id, updateError.message, updateError.details);
+      return null;
+    }
+    return getInstance(id);
+  }
+
+  // Prepare update data (theme, content, publishedSlug, or full data sync)
   const updateData: Record<string, unknown> = {
     data: {
       theme: instance.theme,
@@ -303,6 +407,7 @@ export async function updateInstance(
       content: instance.content,
       features: instance.features,
       firstRecentProjectDetail: instance.firstRecentProjectDetail,
+      preGeneratedFlowData: instance.preGeneratedFlowData,
     },
   };
 
@@ -315,6 +420,58 @@ export async function updateInstance(
     .update(updateData)
     .eq("id", id);
 
-  if (error) return null;
+  if (error) {
+    console.error("updateInstance failed:", id, error.message, error.details);
+    return null;
+  }
   return getInstance(id);
+}
+
+/**
+ * Update a single concept within the first recent project detail.
+ * Reads only the first_recent_project_data column (avoids full getInstance timeout), patches the concept, writes back.
+ * Returns the updated FirstRecentProjectDetail so the client can merge; does not return full instance (avoids second timeout).
+ */
+export async function updateInstanceConcept(
+  id: string,
+  opportunityId: string,
+  conceptId: string,
+  patch: { title?: string; overview?: string; image?: string }
+): Promise<FirstRecentProjectDetail | null> {
+  const { data: row, error: selectError } = await supabase
+    .from("instances")
+    .select("first_recent_project_data")
+    .eq("id", id)
+    .single();
+
+  if (selectError || !row) {
+    console.error("updateInstanceConcept select error:", id, selectError?.message);
+    return null;
+  }
+
+  const detail = row.first_recent_project_data as FirstRecentProjectDetail | null;
+  if (!detail?.opportunities?.length) return null;
+
+  const nextOpportunities = detail.opportunities.map((opp) => {
+    if (opp.id !== opportunityId) return opp;
+    return {
+      ...opp,
+      concepts: opp.concepts.map((c) => {
+        if (c.id !== conceptId) return c;
+        return { ...c, ...patch };
+      }),
+    };
+  });
+  const updatedDetail: FirstRecentProjectDetail = { ...detail, opportunities: nextOpportunities };
+
+  const { error: updateError } = await supabase
+    .from("instances")
+    .update({ first_recent_project_data: updatedDetail })
+    .eq("id", id);
+
+  if (updateError) {
+    console.error("updateInstanceConcept update failed:", id, updateError.message, updateError.details);
+    return null;
+  }
+  return updatedDetail;
 }

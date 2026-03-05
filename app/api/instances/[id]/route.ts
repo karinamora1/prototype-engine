@@ -26,8 +26,8 @@ export async function GET(
 
 /**
  * PATCH /api/instances/[id]
- * Body: { theme?: { colors?: Partial<BrandTheme["colors"]> }, content?: Partial<ContentMap> }
- * Updates this instance only (theme and/or content). Does not modify the base prototype or default config.
+ * Body: { theme?: { colors?: Partial<BrandTheme["colors"]> }, content?: Partial<ContentMap>, firstRecentProjectDetail?: FirstRecentProjectDetail | null }
+ * Updates this instance only (theme, content, and/or firstRecentProjectDetail). Does not modify the base prototype or default config.
  * Returns the full instance (without password hash).
  */
 export async function PATCH(
@@ -43,10 +43,12 @@ export async function PATCH(
     const body = await request.json().catch(() => ({}));
     const themeUpdates = body.theme;
     const contentUpdates = body.content;
+    const firstRecentProjectDetailUpdates = body.firstRecentProjectDetail;
     const hasTheme = themeUpdates && typeof themeUpdates === "object";
     const hasContent = contentUpdates != null && typeof contentUpdates === "object";
-    if (!hasTheme && !hasContent) {
-      return NextResponse.json({ error: "theme or content object required" }, { status: 400 });
+    const hasFirstRecentProjectDetail = firstRecentProjectDetailUpdates !== undefined;
+    if (!hasTheme && !hasContent && !hasFirstRecentProjectDetail) {
+      return NextResponse.json({ error: "theme, content, or firstRecentProjectDetail required" }, { status: 400 });
     }
     const updated = await updateInstance(id, {
       theme: hasTheme
@@ -55,6 +57,7 @@ export async function PATCH(
           }
         : undefined,
       content: hasContent ? contentUpdates : undefined,
+      firstRecentProjectDetail: hasFirstRecentProjectDetail ? firstRecentProjectDetailUpdates : undefined,
     });
     if (!updated) {
       return NextResponse.json({ error: "Instance not found" }, { status: 404 });
@@ -62,8 +65,9 @@ export async function PATCH(
     const { passwordHash, ...safe } = updated;
     return NextResponse.json({ ...safe, passwordProtected: !!passwordHash });
   } catch (e) {
+    const message = e instanceof Error ? e.message : "Failed to update instance";
     console.error("Patch instance error:", e);
-    return NextResponse.json({ error: "Failed to update instance" }, { status: 500 });
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
 
