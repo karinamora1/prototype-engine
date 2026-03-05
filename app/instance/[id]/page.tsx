@@ -419,16 +419,22 @@ export default function InstancePage({ params }: { params: { id: string } | Prom
                               : `${normalized}#000000`.slice(0, 7);
                         setSaveTokenLoading(true);
                         try {
+                          const fullTheme = {
+                            ...instance.theme,
+                            colors: { ...instance.theme.colors, [editingTokenKey!]: sixHex },
+                          };
                           const res = await fetch(`/api/instances/${id}`, {
                             method: "PATCH",
                             headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({
-                              theme: { colors: { [editingTokenKey]: sixHex } },
-                            }),
+                            body: JSON.stringify({ theme: fullTheme }),
                           });
                           const data = await res.json();
-                          if (res.ok && data.id) {
-                            setInstance(data as PrototypeInstanceView);
+                          if (res.ok) {
+                            if (data.theme != null) {
+                              setInstance((prev) => prev ? { ...prev, theme: data.theme } : prev);
+                            } else if (data.id) {
+                              setInstance(data as PrototypeInstanceView);
+                            }
                             setEditingTokenKey(null);
                           }
                         } finally {

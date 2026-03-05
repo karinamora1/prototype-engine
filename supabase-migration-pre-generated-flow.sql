@@ -6,3 +6,6 @@ ALTER TABLE instances ADD COLUMN IF NOT EXISTS pre_generated_flow_data JSONB;
 -- Dedicated column for first recent project detail (concept titles, overviews, images).
 -- Saves from the project page update only this column to avoid timeouts when payload is large (e.g. base64 images).
 ALTER TABLE instances ADD COLUMN IF NOT EXISTS first_recent_project_data JSONB;
+
+-- Theme (colors, typography) in its own column so design token updates don't read/write the whole data JSONB.
+ALTER TABLE instances ADD COLUMN IF NOT EXISTS theme_data JSONB;

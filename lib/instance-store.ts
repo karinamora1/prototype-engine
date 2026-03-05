@@ -68,6 +68,7 @@ export async function createInstance(input: CreateInstanceInput): Promise<Protot
     brief_summary: input.briefSummary,
     source_instance_id: input.sourceInstanceId,
     published_slug: null,
+    theme_data: input.theme,
     data: {
       theme: input.theme,
       brand: input.brand,
@@ -123,11 +124,11 @@ export async function getInstance(id: string): Promise<PrototypeInstance | null>
     // Retry without first_recent_project_data in case the row is too large (e.g. base64 images) and caused timeout/failure
     const fallback = await supabase
       .from("instances")
-      .select("id, name, slug, created_at, updated_at, password_hash, brief_summary, source_instance_id, published_slug, data, pre_generated_flow_data")
+      .select("id, name, slug, created_at, updated_at, password_hash, brief_summary, source_instance_id, published_slug, theme_data, data, pre_generated_flow_data")
       .eq("id", id)
       .single();
     if (fallback.error || !fallback.data) return null;
-    const row = fallback.data as Record<string, unknown> & { data?: Record<string, unknown> | null; pre_generated_flow_data?: unknown };
+    const row = fallback.data as Record<string, unknown> & { data?: Record<string, unknown> | null; pre_generated_flow_data?: unknown; theme_data?: unknown };
     const dataPayload = row.data ?? {};
     return {
       id: row.id as string,
@@ -139,7 +140,7 @@ export async function getInstance(id: string): Promise<PrototypeInstance | null>
       briefSummary: row.brief_summary as string,
       sourceInstanceId: row.source_instance_id as string | undefined,
       publishedSlug: row.published_slug as string | undefined,
-      theme: (dataPayload.theme ?? {}) as PrototypeInstance["theme"],
+      theme: (row.theme_data ?? dataPayload.theme ?? {}) as PrototypeInstance["theme"],
       brand: (dataPayload.brand ?? {}) as PrototypeInstance["brand"],
       content: (dataPayload.content ?? {}) as PrototypeInstance["content"],
       features: (dataPayload.features ?? {}) as PrototypeInstance["features"],
@@ -153,6 +154,7 @@ export async function getInstance(id: string): Promise<PrototypeInstance | null>
     data?: Record<string, unknown> | null;
     pre_generated_flow_data?: unknown;
     first_recent_project_data?: unknown;
+    theme_data?: unknown;
   };
   const dataPayload = row.data ?? {};
   return {
@@ -165,7 +167,7 @@ export async function getInstance(id: string): Promise<PrototypeInstance | null>
     briefSummary: row.brief_summary as string,
     sourceInstanceId: row.source_instance_id as string | undefined,
     publishedSlug: row.published_slug as string | undefined,
-    theme: (dataPayload.theme ?? {}) as PrototypeInstance["theme"],
+    theme: (row.theme_data ?? dataPayload.theme ?? {}) as PrototypeInstance["theme"],
     brand: (dataPayload.brand ?? {}) as PrototypeInstance["brand"],
     content: (dataPayload.content ?? {}) as PrototypeInstance["content"],
     features: (dataPayload.features ?? {}) as PrototypeInstance["features"],
@@ -191,6 +193,7 @@ export async function getInstanceBySlug(slug: string): Promise<PrototypeInstance
     data?: Record<string, unknown> | null;
     pre_generated_flow_data?: unknown;
     first_recent_project_data?: unknown;
+    theme_data?: unknown;
   };
   const dataPayload = row.data ?? {};
   return {
@@ -203,7 +206,7 @@ export async function getInstanceBySlug(slug: string): Promise<PrototypeInstance
     briefSummary: row.brief_summary as string,
     sourceInstanceId: row.source_instance_id as string | undefined,
     publishedSlug: row.published_slug as string | undefined,
-    theme: (dataPayload.theme ?? {}) as PrototypeInstance["theme"],
+    theme: (row.theme_data ?? dataPayload.theme ?? {}) as PrototypeInstance["theme"],
     brand: (dataPayload.brand ?? {}) as PrototypeInstance["brand"],
     content: (dataPayload.content ?? {}) as PrototypeInstance["content"],
     features: (dataPayload.features ?? {}) as PrototypeInstance["features"],
@@ -306,6 +309,26 @@ export async function deleteInstance(id: string): Promise<boolean> {
     .eq("id", id);
 
   return !error;
+}
+
+/** Theme type for instance (colors + typography) */
+type InstanceTheme = PrototypeInstance["theme"];
+
+/**
+ * Update only the theme column. No read — client sends full theme (e.g. after merging one token change).
+ * Avoids full getInstance/timeouts. Returns the theme that was written, or null on error.
+ */
+export async function updateInstanceTheme(id: string, theme: InstanceTheme): Promise<InstanceTheme | null> {
+  const { error } = await supabase
+    .from("instances")
+    .update({ theme_data: theme })
+    .eq("id", id);
+
+  if (error) {
+    console.error("updateInstanceTheme failed:", id, error.message, error.details);
+    return null;
+  }
+  return theme;
 }
 
 /**

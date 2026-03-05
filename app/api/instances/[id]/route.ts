@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getInstance, deleteInstance, updateInstance, duplicateInstance, updateIndexEntry } from "@/lib/instance-store";
+import { getInstance, deleteInstance, updateInstance, updateInstanceTheme, duplicateInstance, updateIndexEntry } from "@/lib/instance-store";
 
 /**
  * GET /api/instances/[id]
@@ -26,9 +26,8 @@ export async function GET(
 
 /**
  * PATCH /api/instances/[id]
- * Body: { theme?: { colors?: Partial<BrandTheme["colors"]> }, content?: Partial<ContentMap>, firstRecentProjectDetail?: FirstRecentProjectDetail | null }
- * Updates this instance only (theme, content, and/or firstRecentProjectDetail). Does not modify the base prototype or default config.
- * Returns the full instance (without password hash).
+ * Body: { theme?: { colors?, typography? }, content?, firstRecentProjectDetail? }
+ * Theme-only: updates only theme_data column and returns { theme } (no full instance read). Other updates use full getInstance/updateInstance.
  */
 export async function PATCH(
   request: NextRequest,
@@ -36,10 +35,6 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params;
-    const instance = await getInstance(id);
-    if (!instance) {
-      return NextResponse.json({ error: "Instance not found" }, { status: 404 });
-    }
     const body = await request.json().catch(() => ({}));
     const themeUpdates = body.theme;
     const contentUpdates = body.content;
@@ -49,6 +44,20 @@ export async function PATCH(
     const hasFirstRecentProjectDetail = firstRecentProjectDetailUpdates !== undefined;
     if (!hasTheme && !hasContent && !hasFirstRecentProjectDetail) {
       return NextResponse.json({ error: "theme, content, or firstRecentProjectDetail required" }, { status: 400 });
+    }
+
+    // Theme-only update: no getInstance, only write theme_data column and return { theme } to avoid timeouts
+    if (hasTheme && !hasContent && !hasFirstRecentProjectDetail) {
+      const theme = await updateInstanceTheme(id, themeUpdates);
+      if (!theme) {
+        return NextResponse.json({ error: "Instance not found or update failed" }, { status: 404 });
+      }
+      return NextResponse.json({ theme });
+    }
+
+    const instance = await getInstance(id);
+    if (!instance) {
+      return NextResponse.json({ error: "Instance not found" }, { status: 404 });
     }
     const updated = await updateInstance(id, {
       theme: hasTheme
