@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { updateInstanceConcept } from "@/lib/instance-store";
+import { uploadInstanceImage } from "@/lib/instance-image-storage";
 
 /**
  * PATCH /api/instances/[id]/concept
@@ -22,7 +23,14 @@ export async function PATCH(
     const patch: { title?: string; overview?: string; image?: string } = {};
     if (typeof body.title === "string") patch.title = body.title;
     if (typeof body.overview === "string") patch.overview = body.overview;
-    if (typeof body.image === "string") patch.image = body.image;
+    if (typeof body.image === "string") {
+      // Upload data URLs to Supabase Storage and store the public URL
+      patch.image = await uploadInstanceImage(
+        id,
+        `concepts/${opportunityId}-${conceptId}`,
+        body.image
+      );
+    }
     if (Object.keys(patch).length === 0) {
       return NextResponse.json({ error: "At least one of title, overview, or image required" }, { status: 400 });
     }

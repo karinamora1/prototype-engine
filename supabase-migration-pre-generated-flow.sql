@@ -9,3 +9,7 @@ ALTER TABLE instances ADD COLUMN IF NOT EXISTS first_recent_project_data JSONB;
 
 -- Theme (colors, typography) in its own column so design token updates don't read/write the whole data JSONB.
 ALTER TABLE instances ADD COLUMN IF NOT EXISTS theme_data JSONB;
+
+-- Optional: Supabase Storage bucket for instance images (concept/opportunity images stored as public URLs).
+-- In Dashboard: Storage → New bucket → Name: instance-images, Public: Yes.
+-- Or the app will try to create it on first upload (ensureBucket in lib/instance-image-storage.ts).

@@ -24,6 +24,7 @@ import {
   generateConceptHeaderImageWithOpenAI,
   generateConceptHeaderImage,
 } from "@/lib/ai-concept-image";
+import { uploadInstanceImagesBatched, replaceDataUrlsInFirstRecentProjectDetail, replaceDataUrlsInPreGeneratedFlowData, type UploadTask } from "@/lib/instance-image-storage";
 
 /**
  * POST /api/instances/generate
@@ -129,6 +130,42 @@ export async function POST(request: NextRequest) {
     // Create instance first (avoids DB statement timeout during long pre-generation)
     const instance = await createInstance(input);
 
+    // Upload any data-URL concept images to Supabase Storage and update instance with public URLs (throttled to avoid overwhelming Supabase)
+    if (instance.firstRecentProjectDetail?.opportunities?.length) {
+      const opportunities = instance.firstRecentProjectDetail.opportunities;
+      const tasks: UploadTask[] = [];
+      const slotByOpp: number[][] = [];
+      opportunities.forEach((opp) => {
+        const slots: number[] = [];
+        opp.concepts.forEach((c) => {
+          slots.push(tasks.length);
+          tasks.push({
+            instanceId: instance.id,
+            pathKey: `concepts/${opp.id}-${c.id}`,
+            imageValue: c.image,
+          });
+        });
+        slotByOpp.push(slots);
+      });
+      const urls = await uploadInstanceImagesBatched(tasks);
+      let slotIdx = 0;
+      const updatedOpportunities = opportunities.map((opp, oi) => ({
+        ...opp,
+        concepts: opp.concepts.map((c, ci) => {
+          const url = urls[slotByOpp[oi][ci]] ?? c.image;
+          return { ...c, image: url };
+        }),
+      }));
+      const firstRecentProjectDetailWithUrls: FirstRecentProjectDetail = {
+        ...instance.firstRecentProjectDetail,
+        opportunities: updatedOpportunities,
+      };
+      // Never write base64 to DB: replace any remaining data URLs (e.g. upload failed) with placeholder to avoid statement timeout
+      const payload = replaceDataUrlsInFirstRecentProjectDetail(firstRecentProjectDetailWithUrls);
+      await updateInstance(instance.id, { firstRecentProjectDetail: payload });
+      instance.firstRecentProjectDetail = firstRecentProjectDetailWithUrls;
+    }
+
     // Pre-generate flow data for first focus pill (demo); then update instance
     try {
       const insights = await generateInsightsWithAI({ scopeChoice: "broad" });
@@ -211,6 +248,28 @@ export async function POST(request: NextRequest) {
             pricePackSizeOptions: c.pricePackSizeOptions ?? [],
           }));
 
+          // Upload data-URL images to Supabase Storage (throttled) so we store public URLs
+          const opportunityTasks: UploadTask[] = opportunitySpacesWithImages.map((s) => ({
+            instanceId: instance.id,
+            pathKey: `pregen/opportunity-${s.id}`,
+            imageValue: s.image,
+          }));
+          const conceptTasks: UploadTask[] = conceptsForFirstOpportunity.map((c) => ({
+            instanceId: instance.id,
+            pathKey: `pregen/concept-${c.id}`,
+            imageValue: c.image,
+          }));
+          const opportunityUrls = await uploadInstanceImagesBatched(opportunityTasks);
+          const conceptUrls = await uploadInstanceImagesBatched(conceptTasks);
+          const opportunitySpacesWithStorageUrls = opportunitySpacesWithImages.map((s, i) => ({
+            ...s,
+            image: opportunityUrls[i] ?? s.image,
+          }));
+          const conceptsWithStorageUrls = conceptsForFirstOpportunity.map((c, i) => ({
+            ...c,
+            image: conceptUrls[i] ?? c.image,
+          }));
+
           const preGeneratedFlowData: PreGeneratedFlowData = {
             insights: insights.slice(0, 4).map((ins, i) => ({
               id: String(i + 1),
@@ -218,10 +277,12 @@ export async function POST(request: NextRequest) {
               category: ins.category,
               description: ins.description,
             })),
-            opportunitySpaces: opportunitySpacesWithImages,
-            conceptsForFirstOpportunity,
+            opportunitySpaces: opportunitySpacesWithStorageUrls,
+            conceptsForFirstOpportunity: conceptsWithStorageUrls,
           };
-          const updated = await updateInstance(instance.id, { preGeneratedFlowData });
+          // Never write base64 to DB: replace any remaining data URLs with placeholder to avoid statement timeout
+          const pregenPayload = replaceDataUrlsInPreGeneratedFlowData(preGeneratedFlowData);
+          const updated = await updateInstance(instance.id, { preGeneratedFlowData: pregenPayload });
           if (updated) {
             return NextResponse.json(updated);
           }

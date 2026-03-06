@@ -4,6 +4,7 @@
 
 import { nanoid } from "nanoid";
 import { supabase } from "./supabase";
+import { replaceDataUrlsInFirstRecentProjectDetail, deleteInstanceStorageImages } from "./instance-image-storage";
 import type { PrototypeInstance, CreateInstanceInput, ContentMap, PreGeneratedFlowData, FirstRecentProjectDetail } from "./types";
 
 export type IndexEntry = {
@@ -69,13 +70,16 @@ export async function createInstance(input: CreateInstanceInput): Promise<Protot
     source_instance_id: input.sourceInstanceId,
     published_slug: null,
     theme_data: input.theme,
+    first_recent_project_data:
+      input.firstRecentProjectDetail != null
+        ? replaceDataUrlsInFirstRecentProjectDetail(input.firstRecentProjectDetail)
+        : null,
+    pre_generated_flow_data: input.preGeneratedFlowData ?? null,
     data: {
       theme: input.theme,
       brand: input.brand,
       content: input.content,
       features: input.features,
-      firstRecentProjectDetail: input.firstRecentProjectDetail,
-      preGeneratedFlowData: input.preGeneratedFlowData,
     },
   });
 
@@ -121,7 +125,8 @@ export async function getInstance(id: string): Promise<PrototypeInstance | null>
 
   if (error) {
     console.error("getInstance error:", id, error.message, error.code, error.details);
-    // Retry without first_recent_project_data in case the row is too large (e.g. base64 images) and caused timeout/failure
+    // Brief pause before retry to avoid hammering an overloaded DB
+    // Retry without first_recent_project_data in case the row is too large and caused timeout/failure
     const fallback = await supabase
       .from("instances")
       .select("id, name, slug, created_at, updated_at, password_hash, brief_summary, source_instance_id, published_slug, theme_data, data, pre_generated_flow_data")
@@ -219,7 +224,6 @@ export async function listInstances(): Promise<IndexEntry[]> {
   const { data, error } = await supabase
     .from("instances")
     .select("id, name, slug, created_at, source_instance_id, published_slug, password_hash")
-    .is("source_instance_id", null)
     .order("created_at", { ascending: false });
 
   if (error || !data) return [];
@@ -245,7 +249,6 @@ export async function searchInstances(query: string): Promise<IndexEntry[]> {
   const { data, error } = await supabase
     .from("instances")
     .select("id, name, slug, created_at, source_instance_id, published_slug, password_hash")
-    .is("source_instance_id", null)
     .or(`name.ilike.%${q}%,slug.ilike.%${q}%`)
     .order("created_at", { ascending: false });
 
@@ -300,9 +303,10 @@ export async function removePassword(id: string): Promise<PrototypeInstance | nu
 }
 
 /**
- * Delete an instance and all its data.
+ * Delete an instance and all its data (DB row + images in Storage bucket).
  */
 export async function deleteInstance(id: string): Promise<boolean> {
+  await deleteInstanceStorageImages(id);
   const { error } = await supabase
     .from("instances")
     .delete()
@@ -422,15 +426,14 @@ export async function updateInstance(
     return getInstance(id);
   }
 
-  // Prepare update data (theme, content, publishedSlug, or full data sync)
+  // Prepare update data (theme, content, publishedSlug, or full data sync).
+  // Keep data column small: only theme, brand, content, features. firstRecentProjectDetail and preGeneratedFlowData live in dedicated columns.
   const updateData: Record<string, unknown> = {
     data: {
       theme: instance.theme,
       brand: instance.brand,
       content: instance.content,
       features: instance.features,
-      firstRecentProjectDetail: instance.firstRecentProjectDetail,
-      preGeneratedFlowData: instance.preGeneratedFlowData,
     },
   };
 

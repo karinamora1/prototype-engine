@@ -13,6 +13,7 @@ export default function LibraryPage() {
   const router = useRouter();
   const [unlocked, setUnlocked] = useState<boolean | null>(null);
   const [list, setList] = useState<InstanceMeta[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -21,13 +22,20 @@ export default function LibraryPage() {
 
   function loadList() {
     setLoading(true);
+    setLoadError(null);
     const url = query.trim() ? `/api/instances?q=${encodeURIComponent(query)}` : "/api/instances";
     fetch(url, { cache: "no-store" })
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) return r.json().then((d) => Promise.reject(new Error(d?.error ?? "Failed to load")));
+        return r.json();
+      })
       .then((data) => {
         setList(Array.isArray(data) ? data : []);
       })
-      .catch(() => setList([]))
+      .catch((err) => {
+        setLoadError(err?.message ?? "Failed to load instances");
+        setList([]);
+      })
       .finally(() => setLoading(false));
   }
 
@@ -108,6 +116,17 @@ export default function LibraryPage() {
       />
       {loading ? (
         <p className="text-slate-500">Loading…</p>
+      ) : loadError ? (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-800">
+          <p className="mb-2">{loadError}</p>
+          <button
+            type="button"
+            onClick={() => loadList()}
+            className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-sm font-medium text-amber-800 hover:bg-amber-100"
+          >
+            Retry
+          </button>
+        </div>
       ) : list.length === 0 ? (
         <p className="text-slate-500">No instances yet. Create one from a brief.</p>
       ) : (

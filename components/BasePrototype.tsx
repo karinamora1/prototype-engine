@@ -453,6 +453,10 @@ export function BasePrototype({ theme, brand, content, features, enableAIGenerat
   const [customFocusValue, setCustomFocusValue] = useState("");
   const [selectedFocusPills, setSelectedFocusPills] = useState<Set<string>>(new Set());
   const [suggestedTab, setSuggestedTab] = useState<"popular" | "global" | "cross">("popular");
+  const suggestedPillsList = (content.suggestedFocusPills ?? "").split("|").map((s) => s.trim()).filter(Boolean);
+  const firstFocusPillName = suggestedPillsList[0] ?? null;
+  const isFirstFocusPillSelected =
+    firstFocusPillName != null && selectedFocusPills.size === 1 && selectedFocusPills.has(firstFocusPillName);
   const [selectedDefineScopeGlobalInsight, setSelectedDefineScopeGlobalInsight] = useState<"Painpoint" | "JTBD" | "Trend" | null>(null);
   const [selectedDefineScopeCrossInsight, setSelectedDefineScopeCrossInsight] = useState<0 | 1 | null>(null);
   const [selectedProjectName, setSelectedProjectName] = useState<string | null>(null);
@@ -619,9 +623,9 @@ export function BasePrototype({ theme, brand, content, features, enableAIGenerat
       setLoadingProgress((p) => (p >= 90 ? 90 : Math.min(90, p + step)));
     }, intervalMs);
 
-    // First focus pill demo: use pre-generated insights when available (no API call); still show 2s loading
+    // First focus pill demo: use pre-generated insights only when the first focus pill is selected (no API call); still show 2s loading
     const preInsights = preGeneratedFlowData?.insights;
-    if (preInsights && preInsights.length >= 4) {
+    if (isFirstFocusPillSelected && preInsights && preInsights.length >= 4) {
       clearInterval(t);
       const preGenDuration = 2000;
       const preGenIntervalMs = 50;
@@ -725,7 +729,7 @@ export function BasePrototype({ theme, brand, content, features, enableAIGenerat
       clearInterval(t);
       controller.abort();
     };
-  }, [flowView, enableAIGeneratedContent, preGeneratedFlowData?.insights]);
+  }, [flowView, enableAIGeneratedContent, preGeneratedFlowData?.insights, isFirstFocusPillSelected, selectedFocusPills]);
 
   // When generating opportunity spaces: call AI with subject + insights (or use defaults), then transition to Opportunity Spaces
   useEffect(() => {
@@ -745,9 +749,9 @@ export function BasePrototype({ theme, brand, content, features, enableAIGenerat
       setGeneratingProgress((p) => (p >= 90 ? 90 : Math.min(90, p + step)));
     }, intervalMs);
 
-    // First focus pill demo: use pre-generated opportunity spaces when available (no API call); still show 2s loading
+    // First focus pill demo: use pre-generated opportunity spaces only when the first focus pill is selected (no API call); still show 2s loading
     const preSpaces = preGeneratedFlowData?.opportunitySpaces;
-    if (preSpaces && preSpaces.length >= 4) {
+    if (isFirstFocusPillSelected && preSpaces && preSpaces.length >= 4) {
       clearInterval(t);
       const preGenDuration = 2000;
       const preGenIntervalMs = 50;
@@ -846,7 +850,7 @@ export function BasePrototype({ theme, brand, content, features, enableAIGenerat
       clearInterval(t);
       controller.abort();
     };
-  }, [flowView, enableAIGeneratedContent, preGeneratedFlowData?.opportunitySpaces]);
+  }, [flowView, enableAIGeneratedContent, preGeneratedFlowData?.opportunitySpaces, isFirstFocusPillSelected, selectedFocusPills]);
 
   useEffect(() => {
     if (!opportunitySpacesLiveText) return;
@@ -1473,7 +1477,7 @@ export function BasePrototype({ theme, brand, content, features, enableAIGenerat
                       <>
                         <div className="space-y-6">
                           {conceptsByOpportunity.map((opp) => {
-                            const isClickableOpp = opp.concepts.length > 0;
+                            const isClickableOpp = opp.id === "1" || opp.id === "2";
                             const baseClass = `flex w-full gap-2 rounded-xl border-2 p-3 text-left transition-all duration-200 ${
                               selectedOpportunityId === opp.id && !selectedConceptId
                                 ? "border-[var(--color-selected-border)] bg-[var(--color-selected-background)] shadow-md shadow-slate-200/50"
@@ -2757,8 +2761,12 @@ export function BasePrototype({ theme, brand, content, features, enableAIGenerat
                     onClick={async () => {
                       setGeneratingConcepts(true);
                       const opp = opportunitySpacesList.find((o) => o.id === selectedOpportunityId);
-                      // First focus pill demo: use pre-generated concepts for first opportunity (no API call); show 2s loading
-                      if (selectedOpportunityId === "1" && preGeneratedFlowData?.conceptsForFirstOpportunity?.length) {
+                      // First focus pill demo: use pre-generated concepts only when first focus pill is selected and first opportunity (no API call); show 2s loading
+                      if (
+                        isFirstFocusPillSelected &&
+                        selectedOpportunityId === "1" &&
+                        preGeneratedFlowData?.conceptsForFirstOpportunity?.length
+                      ) {
                         await new Promise((r) => setTimeout(r, 2000));
                         setConceptsList((prev) => [
                           ...prev.filter((c) => c.opportunityId !== "1"),

@@ -1,6 +1,6 @@
 /**
  * Visual agent: ingests a concept's title and description and creates a header image
- * via an image prompt (GPT) + OpenAI gpt-image-1.5, with Fal (Flux) as fallback.
+ * via an image prompt (gpt-4o-mini) + OpenAI gpt-image-1-mini for image generation, with Fal (Flux) as fallback.
  */
 
 const CONCEPT_IMAGE_PROMPT_SYSTEM = `You are a creative director. Your task is to write a single image prompt for a text-to-image model.
@@ -59,13 +59,13 @@ export async function generateConceptImagePrompt(
   return prompt && prompt.length > 0 ? prompt : null;
 }
 
-/** Generate header image from a prompt using OpenAI gpt-image-1.5; optional size for latency (default 1024x1024). Exported for streaming route. */
+/** Generate header image from a prompt using OpenAI gpt-image-1-mini; falls back to Fal (Flux) on failure. */
 export async function generateConceptHeaderImageWithOpenAI(
   prompt: string,
   size: "1024x1024" | "1536x1024" = "1024x1024"
 ): Promise<string | null> {
   const apiKey = process.env.OPENAI_API_KEY?.trim();
-  if (!apiKey) return null;
+  if (!apiKey) return generateConceptHeaderImage(prompt);
   try {
     const res = await fetch("https://api.openai.com/v1/images/generations", {
       method: "POST",
@@ -74,26 +74,26 @@ export async function generateConceptHeaderImageWithOpenAI(
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: "gpt-image-1.5",
+        model: "gpt-image-1-mini",
         prompt: prompt.slice(0, 4000),
         n: 1,
         size,
       }),
     });
     if (!res.ok) {
-      console.error("OpenAI gpt-image-1.5 concept image API error:", res.status, await res.text());
-      return null;
+      console.error("OpenAI gpt-image-1-mini concept image API error:", res.status, await res.text());
+      return generateConceptHeaderImage(prompt);
     }
     const data = (await res.json()) as { data?: { b64_json?: string; url?: string; result?: string }[] };
     const first = data.data?.[0];
-    if (!first) return null;
+    if (!first) return generateConceptHeaderImage(prompt);
     if (first.url && first.url.startsWith("http")) return first.url;
     const b64 = first.b64_json ?? (first as { result?: string }).result;
-    if (!b64) return null;
+    if (!b64) return generateConceptHeaderImage(prompt);
     return `data:image/png;base64,${b64}`;
   } catch (e) {
     console.error("OpenAI concept image generation failed:", e);
-    return null;
+    return generateConceptHeaderImage(prompt);
   }
 }
 
@@ -111,7 +111,7 @@ export async function generateConceptHeaderImage(prompt: string): Promise<string
 
 /**
  * Generate a header image for a concept from its title, description, and optional brand info.
- * Tries OpenAI gpt-image-1.5 first; falls back to Fal (Flux) if OpenAI fails.
+ * Uses gpt-4o-mini for the prompt, gpt-image-1-mini for the image (Fal as fallback).
  */
 export async function generateConceptImageFromContent(
   title: string,
