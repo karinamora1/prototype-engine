@@ -30,6 +30,8 @@ export default function BriefPage() {
   const [wordmarkImageDataUrl, setWordmarkImageDataUrl] = useState<string | null>(null);
   const wordmarkFileInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
+  const [generateProgress, setGenerateProgress] = useState(0);
+  const generateProgressRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [generatedId, setGeneratedId] = useState<string | null>(null);
   const [visualsThemeMode, setVisualsThemeMode] = useState<"text" | "screenshot">("text");
@@ -160,6 +162,16 @@ export default function BriefPage() {
       : focus;
     setLoading(true);
     try {
+      setGenerateProgress(0);
+      const durationMs = 5 * 60 * 1000;
+      const targetProgress = 92;
+      const intervalMs = 1000;
+      generateProgressRef.current = setInterval(() => {
+        setGenerateProgress((p) => {
+          const next = p + (targetProgress / (durationMs / intervalMs));
+          return next >= targetProgress ? targetProgress : next;
+        });
+      }, intervalMs);
       const childBrandsFiltered = childBrands.filter((b) => b.name.trim());
       const res = await fetch("/api/instances/generate", {
         method: "POST",
@@ -185,6 +197,11 @@ export default function BriefPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
+      if (generateProgressRef.current) {
+        clearInterval(generateProgressRef.current);
+        generateProgressRef.current = null;
+      }
+      setGenerateProgress(100);
       setLoading(false);
     }
   }
@@ -229,9 +246,24 @@ export default function BriefPage() {
               {loading ? "Generating instance" : "Instance ready"}
             </h2>
             {loading ? (
-              <div className="flex flex-col items-center gap-4">
-                <Loader2 className="h-12 w-12 animate-spin text-cyan-400" aria-hidden />
-                <p className="text-sm font-medium text-slate-300">Generating your instance…</p>
+              <div className="flex flex-col items-center gap-6">
+                <img
+                  src="/loading-coffee.png"
+                  alt=""
+                  className="h-32 w-auto rounded-lg object-contain"
+                />
+                <p className="text-center text-base font-medium text-white">
+                  This will take about 5 minutes. Make yourself a nice cup of coffee ☕
+                </p>
+                <div className="w-full space-y-2">
+                  <div className="h-3 w-full overflow-hidden rounded-full bg-slate-700">
+                    <div
+                      className="h-full rounded-full bg-cyan-500 transition-all duration-500 ease-out"
+                      style={{ width: `${generateProgress}%` }}
+                    />
+                  </div>
+                  <p className="text-center text-xs text-slate-400">Generating your instance…</p>
+                </div>
               </div>
             ) : generatedId ? (
               <div className="flex flex-col items-center gap-4">
