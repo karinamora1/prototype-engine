@@ -39,15 +39,26 @@ export async function PATCH(
     const themeUpdates = body.theme;
     const contentUpdates = body.content;
     const firstRecentProjectDetailUpdates = body.firstRecentProjectDetail;
+    const nameUpdate = typeof body.name === "string" ? body.name.trim() : undefined;
     const hasTheme = themeUpdates && typeof themeUpdates === "object";
     const hasContent = contentUpdates != null && typeof contentUpdates === "object";
     const hasFirstRecentProjectDetail = firstRecentProjectDetailUpdates !== undefined;
-    if (!hasTheme && !hasContent && !hasFirstRecentProjectDetail) {
-      return NextResponse.json({ error: "theme, content, or firstRecentProjectDetail required" }, { status: 400 });
+    if (!hasTheme && !hasContent && !hasFirstRecentProjectDetail && nameUpdate === undefined) {
+      return NextResponse.json({ error: "theme, content, firstRecentProjectDetail, or name required" }, { status: 400 });
+    }
+
+    // Name-only update: avoid full getInstance when possible to reduce timeout risk
+    if (nameUpdate !== undefined && !hasTheme && !hasContent && !hasFirstRecentProjectDetail) {
+      const updated = await updateInstance(id, { name: nameUpdate });
+      if (!updated) {
+        return NextResponse.json({ error: "Instance not found" }, { status: 404 });
+      }
+      const { passwordHash, ...safe } = updated;
+      return NextResponse.json({ ...safe, passwordProtected: !!passwordHash });
     }
 
     // Theme-only update: no getInstance, only write theme_data column and return { theme } to avoid timeouts
-    if (hasTheme && !hasContent && !hasFirstRecentProjectDetail) {
+    if (hasTheme && !hasContent && !hasFirstRecentProjectDetail && nameUpdate === undefined) {
       const theme = await updateInstanceTheme(id, themeUpdates);
       if (!theme) {
         return NextResponse.json({ error: "Instance not found or update failed" }, { status: 404 });
@@ -60,6 +71,7 @@ export async function PATCH(
       return NextResponse.json({ error: "Instance not found" }, { status: 404 });
     }
     const updated = await updateInstance(id, {
+      name: nameUpdate,
       theme: hasTheme
         ? {
             colors: themeUpdates.colors && typeof themeUpdates.colors === "object" ? themeUpdates.colors : undefined,

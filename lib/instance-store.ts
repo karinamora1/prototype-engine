@@ -228,15 +228,18 @@ export async function listInstances(): Promise<IndexEntry[]> {
 
   if (error || !data) return [];
 
-  return data.map((row) => ({
-    id: row.id,
-    name: row.name,
-    slug: row.slug,
-    createdAt: row.created_at,
-    sourceInstanceId: row.source_instance_id,
-    publishedSlug: row.published_slug,
-    hasPassword: !!row.password_hash,
-  }));
+  // Only show main instances in the library (no published copies).
+  return data
+    .filter((row) => row.source_instance_id == null || String(row.source_instance_id).trim() === "")
+    .map((row) => ({
+      id: row.id,
+      name: row.name,
+      slug: row.slug,
+      createdAt: row.created_at,
+      sourceInstanceId: row.source_instance_id,
+      publishedSlug: row.published_slug,
+      hasPassword: !!row.password_hash,
+    }));
 }
 
 export async function searchInstances(query: string): Promise<IndexEntry[]> {
@@ -254,15 +257,17 @@ export async function searchInstances(query: string): Promise<IndexEntry[]> {
 
   if (error || !data) return [];
 
-  return data.map((row) => ({
-    id: row.id,
-    name: row.name,
-    slug: row.slug,
-    createdAt: row.created_at,
-    sourceInstanceId: row.source_instance_id,
-    publishedSlug: row.published_slug,
-    hasPassword: !!row.password_hash,
-  }));
+  return data
+    .filter((row) => row.source_instance_id == null || String(row.source_instance_id).trim() === "")
+    .map((row) => ({
+      id: row.id,
+      name: row.name,
+      slug: row.slug,
+      createdAt: row.created_at,
+      sourceInstanceId: row.source_instance_id,
+      publishedSlug: row.published_slug,
+      hasPassword: !!row.password_hash,
+    }));
 }
 
 /** Update an index entry (e.g. set publishedSlug on the source after publishing). */
@@ -342,6 +347,7 @@ export async function updateInstanceTheme(id: string, theme: InstanceTheme): Pro
 export async function updateInstance(
   id: string,
   updates: {
+    name?: string;
     theme?: Partial<PrototypeInstance["theme"]>;
     content?: Partial<ContentMap>;
     firstRecentProjectDetail?: FirstRecentProjectDetail | null;
@@ -351,6 +357,27 @@ export async function updateInstance(
 ): Promise<PrototypeInstance | null> {
   const instance = await getInstance(id);
   if (!instance) return null;
+
+  // Name-only update: single column, no full data read/write
+  const onlyName =
+    updates.name !== undefined &&
+    updates.theme === undefined &&
+    updates.content === undefined &&
+    updates.firstRecentProjectDetail === undefined &&
+    updates.publishedSlug === undefined &&
+    updates.preGeneratedFlowData === undefined;
+  if (onlyName) {
+    const newName = String(updates.name ?? "").trim() || instance.name;
+    const { error: nameError } = await supabase
+      .from("instances")
+      .update({ name: newName })
+      .eq("id", id);
+    if (nameError) {
+      console.error("updateInstance (name) failed:", id, nameError.message);
+      return null;
+    }
+    return getInstance(id);
+  }
 
   // Merge theme updates
   if (updates.theme) {
@@ -426,7 +453,7 @@ export async function updateInstance(
     return getInstance(id);
   }
 
-  // Prepare update data (theme, content, publishedSlug, or full data sync).
+  // Prepare update data (theme, content, publishedSlug, name, or full data sync).
   // Keep data column small: only theme, brand, content, features. firstRecentProjectDetail and preGeneratedFlowData live in dedicated columns.
   const updateData: Record<string, unknown> = {
     data: {
@@ -439,6 +466,10 @@ export async function updateInstance(
 
   if (updates.publishedSlug !== undefined) {
     updateData.published_slug = updates.publishedSlug;
+  }
+  if (updates.name !== undefined) {
+    const newName = String(updates.name).trim() || instance.name;
+    updateData.name = newName;
   }
 
   const { error } = await supabase

@@ -81,8 +81,8 @@ export default function DashboardPage() {
               <FolderOpen className="h-6 w-6" aria-hidden />
             </span>
             <div className="min-w-0 flex-1 text-left">
-              <h2 className="mb-0.5 font-semibold text-white">Instance Library</h2>
-              <p className="text-sm text-slate-400">Browse and open existing branded instances.</p>
+              <h2 className="mb-0.5 font-semibold text-white">Library</h2>
+              <p className="text-sm text-slate-400">Browse demo content and project prototypes.</p>
             </div>
             <span className="text-slate-500 transition group-hover:translate-x-1 group-hover:text-violet-400" aria-hidden>→</span>
           </Link>
